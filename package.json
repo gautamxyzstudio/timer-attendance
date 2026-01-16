@@ -1,0 +1,31 @@
+{
+  "name": "electron-vite-attendance",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "lint": "eslint .",
+    "preview": "vite preview",
+    "electron": "electron electron/main.cjs",
+    "start": "concurrently \"vite\" \"wait-on http://localhost:5173 && electron electron/main.cjs\""
+  },
+  "dependencies": {
+    "axios": "^1.13.2",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0"
+  },
+  "devDependencies": {
+    "electron": "^40.0.0",
+    "concurrently": "^8.2.2",
+    "wait-on": "^7.2.0",
+    "@vitejs/plugin-react": "^5.1.1",
+    "vite": "^7.2.4",
+    "eslint": "^9.39.1",
+    "eslint-plugin-react-hooks": "^7.0.1",
+    "eslint-plugin-react-refresh": "^0.4.24",
+    "globals": "^16.5.0",
+    "@eslint/js": "^9.39.1"
+  }
+}
