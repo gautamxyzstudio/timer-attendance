@@ -1,6 +1,6 @@
-import { useEffect, useRef, useState } from "react";
-import Attendance from "./Attendance.jsx";
+import { useEffect, useState } from "react";
 import api from "./api.js";
+import Attendance from "./Attendence.jsx";
 
 /* ================= HELPERS ================= */
 
@@ -23,6 +23,7 @@ const isLunchTime = () => {
   const mins = getNowMinutes();
   return mins >= 13 * 60 && mins < 14 * 60;
 };
+
 
 // 🔒 Display-only helper
 const getLiveTaskSeconds = (task) => {
@@ -66,41 +67,9 @@ const stopTaskSafely = (task) => {
 
 export default function AttendanceApp({ onLogout }) {
 
-  useEffect(() => {
-  let lastActivity = Date.now();
-  let idleTimer;
-
-  const resetTimer = () => {
-    lastActivity = Date.now();
-  };
-
-  ["mousemove", "keydown", "mousedown", "touchstart"].forEach(evt =>
-    window.addEventListener(evt, resetTimer)
-  );
-
-  idleTimer = setInterval(() => {
-    const diff = Date.now() - lastActivity;
-
-    // ⏱ 2 minutes inactivity + task running
-    if (diff >= 2 * 60 * 1000) {
-      window.electronAPI?.showIdlePopup();
-      lastActivity = Date.now(); // prevent repeated popups
-    }
-  }, 10000);
-
-  return () => {
-    clearInterval(idleTimer);
-    ["mousemove", "keydown", "mousedown", "touchstart"].forEach(evt =>
-      window.removeEventListener(evt, resetTimer)
-    );
-  };
-}, []);
-
-
   const [workLog, setWorkLog] = useState(null);
   const [tick, setTick] = useState(0);
 
-  const popupTimeoutRef = useRef(null);
 
   /* ================= GLOBAL TICK ================= */
   useEffect(() => {
@@ -121,78 +90,115 @@ export default function AttendanceApp({ onLogout }) {
     loadLatestWorkLog();
   }, []);
 
+
+   useEffect(() => {
+    if (!workLog?.tasks) return;
+
+    const isAnyRunning = workLog.tasks.some(t => t.is_running);
+
+    if (window.electronAPI?.setTaskRunning) {
+      console.log(
+        "🔁 Syncing TASK_RUNNING with Electron:",
+        isAnyRunning
+      );
+      window.electronAPI.setTaskRunning(isAnyRunning);
+    }
+  }, [workLog]);
+
   /* ================= TASK ACTIONS ================= */
 
-  const startTask = async (task_id) => {
-    const now = new Date().toISOString();
+ const startTask = async (task_id) => {
+  const now = new Date().toISOString();
 
-    setWorkLog((prev) => ({
-      ...prev,
-      tasks: prev.tasks.map((t) => {
-        if (t.is_running && t.task_id !== task_id) {
-          return {
+  // 1️⃣ Update UI immediately
+  setWorkLog((prev) => ({
+    ...prev,
+    tasks: prev.tasks.map((t) => {
+      if (t.is_running && t.task_id !== task_id) {
+        return {
+          ...t,
+          is_running: false,
+          last_started_at: null,
+          time_spent: stopTaskSafely(t),
+        };
+      }
+      if (t.task_id === task_id) {
+        return {
+          ...t,
+          is_running: true,
+          last_started_at: now,
+        };
+      }
+      return t;
+    }),
+  }));
+
+  try {
+    // 2️⃣ Call backend
+    await api.post("/work-logs/start-timer", {
+      workLogId: workLog.id,
+      task_id,
+    });
+
+    // 3️⃣ Tell Electron (THIS IS THE KEY)
+    if (window.electronAPI?.setTaskRunning) {
+      console.log("📤 Sending TASK_RUNNING = true to Electron");
+      window.electronAPI.setTaskRunning(true);
+    } else {
+      console.warn("⚠️ electronAPI.setTaskRunning not available");
+    }
+  } catch (err) {
+    console.error("❌ startTask failed", err);
+    loadLatestWorkLog();
+  }
+};
+
+
+const stopAllTasks = async () => {
+  console.log("🛑 stopAllTasks called");
+
+  // 1️⃣ Update UI immediately
+  setWorkLog((prev) => ({
+    ...prev,
+    tasks: prev.tasks.map((t) =>
+      t.is_running
+        ? {
             ...t,
             is_running: false,
             last_started_at: null,
             time_spent: stopTaskSafely(t),
-          };
-        }
-        if (t.task_id === task_id) {
-          return {
-            ...t,
-            is_running: true,
-            last_started_at: now,
-          };
-        }
-        return t;
-      }),
-    }));
+          }
+        : t
+    ),
+  }));
 
-    try {
-      await api.post("/work-logs/start-timer", {
-        workLogId: workLog.id,
-        task_id,
-      });
-
-      // 🔥 Tell Electron a task is running
-      window.electronAPI.setTaskRunning(true);
-    } catch {
-      loadLatestWorkLog();
-    }
-  };
-
-  const stopAllTasks = async () => {
-    setWorkLog((prev) => ({
-      ...prev,
-      tasks: prev.tasks.map((t) =>
-        t.is_running
-          ? {
-              ...t,
-              is_running: false,
-              last_started_at: null,
-              time_spent: stopTaskSafely(t),
-            }
-          : t
-      ),
-    }));
-
-    try {
-      await api.post("/work-logs/stop-timer", {
-        workLogId: workLog.id,
-      });
-    } finally {
+  try {
+    // 2️⃣ Backend stop
+    await api.post("/work-logs/stop-timer", {
+      workLogId: workLog.id,
+    });
+  } catch (err) {
+    console.error("❌ stopAllTasks API failed", err);
+  } finally {
+    // 3️⃣ Notify Electron (THIS MUST ALWAYS RUN)
+    if (window.electronAPI?.setTaskRunning) {
+      console.log("📤 Sending TASK_RUNNING = false to Electron");
       window.electronAPI.setTaskRunning(false);
+    } else {
+      console.warn("⚠️ electronAPI.setTaskRunning not available");
     }
-  };
+  }
+};
 
   /* ================= ELECTRON FORCE STOP ================= */
 
-  useEffect(() => {
-    window.electronAPI.onForceStopTasks(async () => {
-      await stopAllTasks();
-      alert("Tasks stopped due to inactivity");
-    });
-  }, []);
+ useEffect(() => {
+  window.electronAPI.onForceStopTasks(async () => {
+    console.log("🛑 Force stop received from Electron");
+    await stopAllTasks();
+  });
+}, []);
+
 
   /* ================= UI ================= */
 

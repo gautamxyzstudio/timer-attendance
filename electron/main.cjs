@@ -1,12 +1,20 @@
-const { app, BrowserWindow, ipcMain, screen } = require("electron");
+const {
+  app,
+  BrowserWindow,
+  ipcMain,
+  screen,
+  powerMonitor
+} = require("electron");
 const path = require("path");
 
-let mainWindow;
-let popupWindow;
+let mainWindow = null;
+let popupWindow = null;
+let popupTimer = null;
 
-const VITE_URL = "http://localhost:5173";
+let TASK_RUNNING = false;
+let POPUP_OPEN = false;
 
-app.disableHardwareAcceleration();
+const IDLE_LIMIT = 120; // 2 minutes
 
 /* ================= MAIN WINDOW ================= */
 
@@ -21,26 +29,27 @@ function createMainWindow() {
     }
   });
 
-  mainWindow.loadURL(VITE_URL);
-
-  mainWindow.webContents.on("did-fail-load", () => {
-    setTimeout(() => mainWindow.loadURL(VITE_URL), 1000);
-  });
-
+  mainWindow.loadURL("http://localhost:5173");
   mainWindow.webContents.openDevTools({ mode: "detach" });
 }
 
 /* ================= POPUP ================= */
 
 function createPopup() {
-  if (popupWindow) return;
+  if (POPUP_OPEN) {
+    console.log("⚠️ Popup already open, skipping");
+    return;
+  }
+
+  console.log("🪟 Opening idle popup");
+  POPUP_OPEN = true;
 
   const { width } = screen.getPrimaryDisplay().workAreaSize;
 
   popupWindow = new BrowserWindow({
-    width: 380,
+    width: 360,
     height: 220,
-    x: width - 400,
+    x: width - 380,
     y: 40,
     frame: false,
     alwaysOnTop: true,
@@ -52,30 +61,78 @@ function createPopup() {
     }
   });
 
-  popupWindow.loadURL(`${VITE_URL}/#/popup`);
+  popupWindow.loadFile(path.join(__dirname, "popup.html"));
+
+  // ⏱ AUTO STOP AFTER 60s
+  popupTimer = setTimeout(() => {
+    console.log("⏱ Timeout → force stop tasks");
+    mainWindow.webContents.send("force-stop-tasks");
+    closePopup();
+  }, 60000);
 
   popupWindow.on("closed", () => {
-    popupWindow = null;
+    console.log("❎ Popup closed by user");
+    closePopup();
   });
+}
+
+function closePopup() {
+  console.log("🧹 Closing popup");
+
+  if (popupTimer) {
+    clearTimeout(popupTimer);
+    popupTimer = null;
+  }
+
+  if (popupWindow && !popupWindow.isDestroyed()) {
+    popupWindow.destroy(); // 🔥 REQUIRED
+  }
+
+  popupWindow = null;
+  POPUP_OPEN = false;
 }
 
 /* ================= IPC ================= */
 
-// Renderer tells Electron: user inactive + task running
-ipcMain.on("show-idle-popup", () => {
-  createPopup();
+// 🔥 Renderer updates task running state
+ipcMain.on("task-running", (_, running) => {
+  TASK_RUNNING = running;
+  console.log("🔥 TASK_RUNNING =", TASK_RUNNING);
 });
 
+// Popup response buttons
 ipcMain.on("popup-response", (_, res) => {
-  if (res === "no") {
+  console.log("🟢 Popup response:", res);
+
+  if (res === "no" || res === "timeout") {
+    console.log("🛑 Force stopping tasks NOW");
     mainWindow.webContents.send("force-stop-tasks");
   }
-  popupWindow?.close();
+
+  closePopup();
 });
 
-/* ================= LIFECYCLE ================= */
+/* ================= IDLE MONITOR ================= */
 
-app.whenReady().then(createMainWindow);
+app.whenReady().then(() => {
+  createMainWindow();
+
+  setInterval(() => {
+    const idle = powerMonitor.getSystemIdleTime();
+
+    console.log(
+      `🕒 IDLE=${idle}s | TASK_RUNNING=${TASK_RUNNING} | POPUP_OPEN=${POPUP_OPEN}`
+    );
+
+    if (
+      idle >= IDLE_LIMIT &&
+      TASK_RUNNING &&
+      !POPUP_OPEN
+    ) {
+      createPopup();
+    }
+  }, 5000);
+});
 
 app.on("window-all-closed", () => {
   if (process.platform !== "darwin") app.quit();

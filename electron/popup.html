@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8" />
+  <title>Idle Alert</title>
+  <style>
+    body {
+      margin: 0;
+      padding: 20px;
+      font-family: Arial;
+      background: #1e1e1e;
+      color: white;
+      text-align: center;
+    }
+    button {
+      margin: 10px;
+      padding: 8px 20px;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 14px;
+    }
+    .yes { background: #4caf50; }
+    .no { background: #f44336; }
+  </style>
+</head>
+
+<body>
+  <h3>Are you still working?</h3>
+  <p>No activity detected</p>
+
+  <p>Auto stopping in <b><span id="count">60</span></b> seconds</p>
+
+  <button class="yes" onclick="respond('yes')">Yes</button>
+  <button class="no" onclick="respond('no')">No</button>
+
+  <script>
+    let seconds = 60;
+    const counter = document.getElementById("count");
+
+    const timer = setInterval(() => {
+      seconds--;
+      counter.textContent = seconds;
+
+      if (seconds <= 0) {
+        clearInterval(timer);
+        window.electronAPI.popupResponse("timeout");
+      }
+    }, 1000);
+
+    function respond(answer) {
+      clearInterval(timer);
+      window.electronAPI.popupResponse(answer);
+    }
+  </script>
+</body>
+</html>

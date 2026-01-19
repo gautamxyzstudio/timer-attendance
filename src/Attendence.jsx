@@ -23,6 +23,18 @@ const isLunchTime = () => {
   return mins >= 13 * 60 && mins < 14 * 60;
 };
 
+// show join button from 1:45 PM
+const canShowJoinButton = () => {
+  const mins = getNowMinutes();
+  return mins >= (13 * 60 + 45); // 1:45 PM
+};
+
+// enable join button only after 2:00 PM
+const canEnableJoinButton = () => {
+  const mins = getNowMinutes();
+  return mins >= (14 * 60); // 2:00 PM
+};
+
 const getUserIdFromToken = () => {
   try {
     const token = localStorage.getItem("jwt");
@@ -130,9 +142,20 @@ export default function Attendance() {
         {formatHMS(seconds)}
       </div>
 
-      {!hasCheckedInToday && (
-        <button onClick={handleCheckIn}>Check In</button>
-      )}
+    {!attendance?.is_checked_in && canShowJoinButton() && (
+  <button
+    onClick={handleCheckIn}
+    disabled={!canEnableJoinButton()}
+    style={{
+      opacity: canEnableJoinButton() ? 1 : 0.5,
+      cursor: canEnableJoinButton() ? "pointer" : "not-allowed"
+    }}
+  >
+    {canEnableJoinButton()
+      ? "Join"
+      : "Join available at 2:00 PM"}
+  </button>
+)}
 
       {attendance?.is_checked_in && (
         <button onClick={handleCheckOut}>Check Out</button>

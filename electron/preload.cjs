@@ -1,12 +1,10 @@
 const { contextBridge, ipcRenderer } = require("electron");
 
 contextBridge.exposeInMainWorld("electronAPI", {
-  showIdlePopup: () =>
-    ipcRenderer.send("show-idle-popup"),
-
+  popupResponse: (res) => ipcRenderer.send("popup-response", res),
   onForceStopTasks: (cb) =>
     ipcRenderer.on("force-stop-tasks", cb),
 
-  popupResponse: (res) =>
-    ipcRenderer.send("popup-response", res)
+  setTaskRunning: (running) =>
+    ipcRenderer.send("task-running", running)
 });
