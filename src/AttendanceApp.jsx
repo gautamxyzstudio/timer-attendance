@@ -1,6 +1,7 @@
-import { useEffect, useState } from "react";
+import { useEffect,useRef ,useState } from "react";
 import api from "./api.js";
 import Attendance from "./Attendence.jsx";
+import AddTask from "./addTask.jsx";
 
 /* ================= HELPERS ================= */
 
@@ -70,6 +71,8 @@ export default function AttendanceApp({ onLogout }) {
   const [workLog, setWorkLog] = useState(null);
   const [tick, setTick] = useState(0);
 
+  const isMountedRef = useRef(true);
+
 
   /* ================= GLOBAL TICK ================= */
   useEffect(() => {
@@ -77,19 +80,33 @@ export default function AttendanceApp({ onLogout }) {
     return () => clearInterval(i);
   }, []);
 
-  /* ================= LOAD WORK LOG ================= */
 
-  const loadLatestWorkLog = async () => {
-    const res = await api.get("/work-logs/user");
-    const logs = res.data?.work_logs || [];
-    logs.sort((a, b) => new Date(b.work_date) - new Date(a.work_date));
-    setWorkLog(logs[0] || null);
-  };
+  /* ================= CREATE TODAY WORK LOG ================= */
 
-  useEffect(() => {
-    loadLatestWorkLog();
-  }, []);
+const createTodayWorkLog = async () => {
+  const res = await api.post("/work-logs/today");
+  return res.data;
+};
 
+
+
+ /* ================= LOAD TODAY WORK LOG ================= */
+
+const loadTodayWorkLog = async () => {
+  try {
+    const res = await api.post("/work-logs/today");
+
+    // ✅ BACKEND RETURNS { work_log, daily_task }
+    setWorkLog(res.data.work_log);
+  } catch (err) {
+    console.error("❌ Failed to create/load today work log", err);
+  }
+};
+
+
+useEffect(() => {
+  loadTodayWorkLog();
+}, []);
 
    useEffect(() => {
     if (!workLog?.tasks) return;
@@ -149,8 +166,7 @@ export default function AttendanceApp({ onLogout }) {
     }
   } catch (err) {
     console.error("❌ startTask failed", err);
-    loadLatestWorkLog();
-  }
+ loadTodayWorkLog();  }
 };
 
 
@@ -199,6 +215,13 @@ const stopAllTasks = async () => {
   });
 }, []);
 
+useEffect(() => {
+  return () => {
+    console.log("🧹 AttendanceApp unmount");
+    isMountedRef.current = false;
+  };
+}, []);
+
 
   /* ================= UI ================= */
 
@@ -217,37 +240,85 @@ const stopAllTasks = async () => {
     <div style={{ padding: 30, fontFamily: "Arial" }}>
       <h2>Daily Attendance & Work Log</h2>
 
+      <br/>
+
       {/* Attendance */}
       <Attendance />
+
+      <br/>
+      <br/>
+      <br/>
+
+      {/* add Task  */}
+<AddTask
+  workLogId={workLog?.id}
+onTaskAdded={(newTask) =>
+  setWorkLog((prev) =>
+    prev
+      ? { ...prev, tasks: [...(prev.tasks || []), newTask] }
+      : prev
+  )
+}
+
+/>
+
+     <br/>
 
       {/* Tasks */}
       <h3 style={{ marginTop: 30 }}>Tasks</h3>
 
-      <table border="1" cellPadding="10">
-        <tbody>
-          {tasks.map((task) => (
-            <tr key={task.task_id}>
-              <td>{task.task_title}</td>
-              <td>{task.is_running ? "Running" : "Stopped"}</td>
-              <td>{formatHMS(getLiveTaskSeconds(task))}</td>
-              <td>
-                {task.is_running ? (
-                  <button onClick={stopAllTasks}>Stop</button>
-                ) : (
-                  <button onClick={() => startTask(task.task_id)}>
-                    Start
-                  </button>
-                )}
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+      <table className="border border-gray-400 border-collapse mt-2">
+  <thead>
+    <tr className="bg-gray-100">
+      <th className="border border-gray-400 px-3 py-2 text-left">
+        Task
+      </th>
+      <th className="border border-gray-400 px-3 py-2 text-left">
+        Status
+      </th>
+      <th className="border border-gray-400 px-3 py-2 text-left">
+        Time
+      </th>
+      <th className="border border-gray-400 px-3 py-2 text-left">
+        Action
+      </th>
+    </tr>
+  </thead>
+
+  <tbody>
+    {tasks.map((task) => (
+      <tr key={task.task_id}>
+        <td className="border border-gray-400 px-3 py-2">
+          {task.task_title}
+        </td>
+
+        <td className="border border-gray-400 px-3 py-2">
+          {task.is_running ? "Running" : "Stopped"}
+        </td>
+
+        <td className="border border-gray-400 px-3 py-2 font-mono">
+          {formatHMS(getLiveTaskSeconds(task))}
+        </td>
+
+        <td className="border border-gray-400 px-3 py-2">
+          {task.is_running ? (
+            <button onClick={stopAllTasks}>Stop</button>
+          ) : (
+            <button onClick={() => startTask(task.task_id)}>
+              Start
+            </button>
+          )}
+        </td>
+      </tr>
+    ))}
+  </tbody>
+</table>
+
+<br/>
 
       <h4>⏱ Total Task Time: {formatHMS(totalTaskSeconds)}</h4>
 
-      <br />
-      <button onClick={onLogout}>Logout</button>
+
     </div>
   );
 }

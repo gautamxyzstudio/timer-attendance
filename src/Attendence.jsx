@@ -142,7 +142,9 @@ export default function Attendance() {
         {formatHMS(seconds)}
       </div>
 
-    {!attendance?.is_checked_in && canShowJoinButton() && (
+{!attendance?.is_checked_in &&
+ !attendance?.out &&
+ canShowJoinButton() && (
   <button
     onClick={handleCheckIn}
     disabled={!canEnableJoinButton()}
@@ -156,6 +158,7 @@ export default function Attendance() {
       : "Join available at 2:00 PM"}
   </button>
 )}
+
 
       {attendance?.is_checked_in && (
         <button onClick={handleCheckOut}>Check Out</button>
