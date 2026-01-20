@@ -23,16 +23,16 @@ const isLunchTime = () => {
   return mins >= 13 * 60 && mins < 14 * 60;
 };
 
-// show join button from 1:45 PM
-const canShowJoinButton = () => {
+// 👀 Show Join button from 1:45 PM
+const canShowResumeButton = () => {
   const mins = getNowMinutes();
   return mins >= (13 * 60 + 45); // 1:45 PM
 };
 
-// enable join button only after 2:00 PM
-const canEnableJoinButton = () => {
+// ✅ Enable Join only after 2:00 PM
+const canEnableResume = () => {
   const mins = getNowMinutes();
-  return mins >= (14 * 60); // 2:00 PM
+  return mins >= 14 * 60; // 2:00 PM
 };
 
 const getUserIdFromToken = () => {
@@ -73,45 +73,67 @@ export default function Attendance() {
   }, []);
 
   /* ⏱ Attendance timer */
-  useEffect(() => {
-    if (!attendance) return;
+ const isSameDay = (dateStr) => {
+  if (!dateStr) return false;
+  const d = new Date(dateStr);
+  const now = new Date();
+  return (
+    d.getFullYear() === now.getFullYear() &&
+    d.getMonth() === now.getMonth() &&
+    d.getDate() === now.getDate()
+  );
+};
 
-    if (!attendance.is_checked_in || !attendance.checkin_started_at) {
-      setSeconds(attendance.attendance_seconds || 0);
-      return;
-    }
+useEffect(() => {
+  if (!attendance) return;
 
-    // Freeze during lunch
-    if (isLunchTime()) {
-      setSeconds(attendance.attendance_seconds || 0);
-      return;
-    }
+  // ❌ Not checked in OR bad timestamp → show stored time only
+  if (
+    !attendance.is_checked_in ||
+    !attendance.checkin_started_at ||
+    !isSameDay(attendance.checkin_started_at)
+  ) {
+    setSeconds(attendance.attendance_seconds || 0);
+    return;
+  }
 
-    const startedAt = new Date(attendance.checkin_started_at).getTime();
-    if (isNaN(startedAt)) return;
+  // ⛔ Lunch pause
+  if (isLunchTime()) {
+    setSeconds(attendance.attendance_seconds || 0);
+    return;
+  }
 
-    const baseSeconds = attendance.attendance_seconds || 0;
-    const liveSeconds = Math.floor((Date.now() - startedAt) / 1000);
+  const startedAt = new Date(attendance.checkin_started_at).getTime();
+  const now = Date.now();
 
-    setSeconds(baseSeconds + Math.max(0, liveSeconds));
-  }, [
-    tick,
-    attendance?.attendance_seconds,
-    attendance?.checkin_started_at,
-    attendance?.is_checked_in
-  ]);
+  if (isNaN(startedAt) || now < startedAt) {
+    setSeconds(attendance.attendance_seconds || 0);
+    return;
+  }
+
+  const liveSeconds = Math.floor((now - startedAt) / 1000);
+
+  setSeconds(
+    (attendance.attendance_seconds || 0) + liveSeconds
+  );
+}, [
+  tick,
+  attendance?.attendance_seconds,
+  attendance?.checkin_started_at,
+  attendance?.is_checked_in
+]);
 
   /* ================= ACTIONS ================= */
 
   const nowHHMM = new Date().toTimeString().slice(0, 5);
-  const hasCheckedInToday = Boolean(attendance?.in);
 
+  // 🌅 Morning Check-in
   const handleCheckIn = async () => {
     setAttendance({
+      ...attendance,
       in: nowHHMM,
       is_checked_in: true,
-      checkin_started_at: new Date().toISOString(),
-      attendance_seconds: attendance?.attendance_seconds || 0
+      checkin_started_at: new Date().toISOString()
     });
 
     await api.post("/daily-attendance/check-in", {
@@ -119,6 +141,18 @@ export default function Attendance() {
     });
   };
 
+  // 🌤 Resume after lunch (NO new entry)
+  const handleResumeAfterLunch = async () => {
+    setAttendance((prev) => ({
+      ...prev,
+      is_checked_in: true,
+      checkin_started_at: new Date().toISOString()
+    }));
+
+    await api.post("/daily-attendance/resume-after-lunch");
+  };
+
+  // 🌙 Check out
   const handleCheckOut = async () => {
     setAttendance((prev) => ({
       ...prev,
@@ -142,26 +176,39 @@ export default function Attendance() {
         {formatHMS(seconds)}
       </div>
 
-{!attendance?.is_checked_in &&
- !attendance?.out &&
- canShowJoinButton() && (
-  <button
-    onClick={handleCheckIn}
-    disabled={!canEnableJoinButton()}
-    style={{
-      opacity: canEnableJoinButton() ? 1 : 0.5,
-      cursor: canEnableJoinButton() ? "pointer" : "not-allowed"
-    }}
-  >
-    {canEnableJoinButton()
-      ? "Join"
-      : "Join available at 2:00 PM"}
-  </button>
-)}
+      {/* 🟢 Morning Check-in */}
+      {!attendance?.in && !attendance?.is_checked_in && (
+        <button onClick={handleCheckIn}>
+          Check In
+        </button>
+      )}
 
+      {/* 🟡 Join / Resume after lunch */}
+      {attendance?.in &&
+        !attendance?.out &&
+        !attendance?.is_checked_in &&
+        canShowResumeButton() && (
+          <button
+            onClick={handleResumeAfterLunch}
+            disabled={!canEnableResume()}
+            style={{
+              opacity: !canEnableResume() ? 0.5 : 1,
+              cursor: !canEnableResume()
+                ? "not-allowed"
+                : "pointer"
+            }}
+          >
+            {canEnableResume()
+              ? "Resume Work"
+              : "Join available at 2:00 PM"}
+          </button>
+        )}
 
+      {/* 🔴 Check out */}
       {attendance?.is_checked_in && (
-        <button onClick={handleCheckOut}>Check Out</button>
+        <button onClick={handleCheckOut}>
+          Check Out
+        </button>
       )}
     </div>
   );

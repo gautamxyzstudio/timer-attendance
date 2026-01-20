@@ -7,12 +7,12 @@ export default function Nav({ onHome, onLogout }) {
         <div className="flex items-center gap-4">
           <button
             onClick={onHome}
-            className="flex items-center text-black gap-1 px-3 py-1 rounded-md bg-slate-700 hover:bg-slate-600 text-sm"
+            className="flex items-center text-white gap-1 px-3 py-1 rounded-md bg-gray-400 hover:bg-slate-600 text-md"
           >
             🏠 Home
           </button>
 
-          <span className="text-lg font-semibold text-blue-400">
+          <span className="text-lg font-semibold text-blue-300">
             TaskTimer
           </span>
         </div>
@@ -20,7 +20,7 @@ export default function Nav({ onHome, onLogout }) {
         {/* RIGHT: Logout */}
         <button
           onClick={onLogout}
-          className="px-3 py-1 rounded-md text-black hover:bg-red-700 text-sm"
+          className="px-4 py-2 rounded-md text-white bg-gray-400  hover:bg-red-700 text-md"
         >
           Logout
         </button>

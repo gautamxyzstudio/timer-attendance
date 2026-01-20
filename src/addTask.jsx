@@ -1,111 +1,129 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import api from "./api";
 
 const AddTask = ({ workLogId, onTaskAdded }) => {
-    const [taskTitle, setTaskTitle] = useState("");
-    const [loading, setLoading] = useState(false);
-    const [error, setError] = useState("");
+  const [taskTitle, setTaskTitle] = useState("");
+  const [projects, setProjects] = useState([]);
+  const [projectId, setProjectId] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
 
-    const handleAddTask = async () => {
-        if (!taskTitle.trim()) {
-            setError("Task title is required");
-            return;
-        }
-
-        try {
-            setLoading(true);
-            setError("");
-
-            const res = await api.post(
-                `/work-logs/${workLogId}/add-task`,
-                {
-                    data: {
-                        task_title: taskTitle,
-                    },
-                }
-            );
-
-            const updatedTasks = res.data.tasks || [];
-            const newlyAddedTask =
-                updatedTasks.length > 0
-                    ? updatedTasks[updatedTasks.length - 1]
-                    : null;
-
-            if (onTaskAdded && newlyAddedTask) {
-                onTaskAdded(newlyAddedTask);
-            }
-
-            setTaskTitle("");
-        } catch (err) {
-            setError(
-                err.response?.data?.message || "Failed to add task"
-            );
-        } finally {
-            setLoading(false);
-        }
+  /* ✅ FETCH ASSIGNED PROJECTS */
+  useEffect(() => {
+    const fetchProjects = async () => {
+      try {
+        const res = await api.get("/projects/myProjects");
+        setProjects(res.data || []); // ✅ FIXED (plain array)
+      } catch {
+        setError("Failed to load projects");
+      }
     };
 
+    fetchProjects();
+  }, []);
 
-    return (
-        <div style={styles.wrapper}>
-            <input
-                type="text"
-                placeholder="Enter task"
-                value={taskTitle}
-                onChange={(e) => setTaskTitle(e.target.value)}
-                style={styles.input}
-            />
+  const handleAddTask = async () => {
+    if (!workLogId) {
+      setError("Today's work log not found");
+      return;
+    }
 
-            <button
-                onClick={handleAddTask}
-                disabled={loading || !workLogId}
-                style={styles.button}
-            >
-                {loading ? "Adding..." : "Add Task"}
-            </button>
+    if (!taskTitle.trim()) {
+      setError("Task title is required");
+      return;
+    }
 
-            {!workLogId && (
-                <p style={styles.info}>
-                    ⚠️ Today’s work log not found
-                </p>
-            )}
+    if (!projectId) {
+      setError("Please select a project");
+      return;
+    }
 
-            {error && <p style={styles.error}>{error}</p>}
-        </div>
-    );
+    try {
+      setLoading(true);
+      setError("");
+
+      const res = await api.post(
+        `/work-logs/${workLogId}/add-task`,
+        {
+          data: {
+            task_title: taskTitle.trim(),
+            project: Number(projectId),
+          },
+        }
+      );
+
+      const updatedTasks = res.data.tasks || [];
+      const newlyAddedTask = updatedTasks.at(-1);
+
+      if (onTaskAdded && newlyAddedTask) {
+        onTaskAdded(newlyAddedTask);
+      }
+
+      setTaskTitle("");
+      setProjectId("");
+    } catch (err) {
+      setError(
+        err.response?.data?.message || "Failed to add task"
+      );
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="w-full max-w-xl space-y-2">
+      <div className="flex flex-col gap-2 sm:flex-row">
+        {/* TASK INPUT */}
+        <input
+          type="text"
+          placeholder="Enter task"
+          value={taskTitle}
+          onChange={(e) => setTaskTitle(e.target.value)}
+          className="flex-1 rounded-md border border-gray-300 px-3 py-2 text-sm
+                     focus:border-blue-500 outline-none focus:ring-1 focus:ring-blue-500"
+        />
+
+        {/* PROJECT SELECT */}
+        <select
+          value={projectId}
+          onChange={(e) => setProjectId(e.target.value)}
+          className="rounded-md border border-gray-300 px-3 py-2 text-sm
+                     focus:border-blue-500 outline-none focus:ring-1 focus:ring-blue-500"
+        >
+          <option value="">Select project</option>
+          {projects.map((p) => (
+            <option key={p.id} value={p.id}>
+              {p.title} {/* ✅ FIXED */}
+            </option>
+          ))}
+        </select>
+
+        {/* ADD BUTTON */}
+        <button
+          onClick={handleAddTask}
+          disabled={loading || !workLogId}
+          className="rounded-md bg-blue-300 px-4 py-2 text-sm font-medium text-black
+                     hover:bg-blue-400 disabled:cursor-not-allowed disabled:opacity-60"
+        >
+          {loading ? "Adding..." : "Add Task"}
+        </button>
+      </div>
+
+      {/* INFO */}
+      {!workLogId && (
+        <p className="text-xs text-gray-500">
+          ⚠️ Today’s work log not found
+        </p>
+      )}
+
+      {/* ERROR */}
+      {error && (
+        <p className="text-xs text-red-600">
+          {error}
+        </p>
+      )}
+    </div>
+  );
 };
 
 export default AddTask;
-
-/* ================= STYLES ================= */
-
-const styles = {
-    wrapper: {
-        display: "flex",
-        gap: "10px",
-        maxWidth: "500px",
-
-    },
-    input: {
-        flex: 1,
-        padding: "10px",
-        border: "2px solid #ccc", 
-        borderRadius: "4px",        
-        outline: "none",
-
-    },
-    button: {
-        padding: "10px 16px",
-        cursor: "pointer",
-    },
-    error: {
-        color: "red",
-        fontSize: "13px",
-        marginTop: "6px",
-    },
-    info: {
-        fontSize: "12px",
-        color: "#666",
-        marginTop: "6px",
-    },
-};
