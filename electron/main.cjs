@@ -14,7 +14,7 @@ let popupTimer = null;
 let TASK_RUNNING = false;
 let POPUP_OPEN = false;
 
-const IDLE_LIMIT = 120; // 2 minutes
+const IDLE_LIMIT = 300; // 5 minutes
 
 /* ================= MAIN WINDOW ================= */
 

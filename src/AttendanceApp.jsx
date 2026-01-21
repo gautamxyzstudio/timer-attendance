@@ -83,6 +83,7 @@ export default function AttendanceApp({ onLogout, registerLogoutHandler }) {
 
   const isMountedRef = useRef(true);
   const userStatusChangeRef = useRef(false);
+  const didInitRef = useRef(false); 
 
 
   /* ================= GLOBAL TICK ================= */
@@ -90,15 +91,6 @@ export default function AttendanceApp({ onLogout, registerLogoutHandler }) {
     const i = setInterval(() => setTick((t) => t + 1), 1000);
     return () => clearInterval(i);
   }, []);
-
-
-  /* ================= CREATE TODAY WORK LOG ================= */
-
-  const createTodayWorkLog = async () => {
-    const res = await api.post("/work-logs/today");
-    return res.data;
-  };
-
 
 
   /* ================= LOAD TODAY WORK LOG ================= */
@@ -115,9 +107,13 @@ export default function AttendanceApp({ onLogout, registerLogoutHandler }) {
   };
 
 
-  useEffect(() => {
-    loadTodayWorkLog();
-  }, []);
+useEffect(() => {
+  if (didInitRef.current) return; // 🛑 block second call
+  didInitRef.current = true;
+
+  loadTodayWorkLog();
+}, []);
+
 
   useEffect(() => {
     if (!workLog?.tasks) return;

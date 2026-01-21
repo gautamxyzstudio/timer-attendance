@@ -3,6 +3,8 @@ import { getUser, logout } from "./auth.js";
 import Login from "./login.jsx";
 import AttendanceApp from "./AttendanceApp.jsx";
 import Nav from "./navbar.jsx";
+import HrTimeline from "./HrTimeline.jsx";
+
 
 export default function App() {
   const [user, setUser] = useState(null);
@@ -42,21 +44,23 @@ export default function App() {
       />
 
       {/* CONTENT */}
-      <div className="pt-14 px-6">
-        <AttendanceApp
-          user={user}
+     <div className="pt-14 px-6">
+  {user.user_type === "Hr" ? (
+    <HrTimeline />
+  ) : (
+    <AttendanceApp
+      user={user}
+      registerLogoutHandler={(fn) => {
+        logoutRef.current = fn;
+      }}
+      onLogout={() => {
+        logout();
+        setUser(null);
+      }}
+    />
+  )}
+</div>
 
-          /* AttendanceApp registers its safeLogout here */
-          registerLogoutHandler={(fn) => {
-            logoutRef.current = fn;
-          }}
-
-          onLogout={() => {
-            logout();       // clear token
-            setUser(null);  // reset UI
-          }}
-        />
-      </div>
     </div>
   );
 }
