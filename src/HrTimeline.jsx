@@ -297,7 +297,7 @@ export default function HrTimeline() {
   });
 
   return (
-    <div className="p-6 bg-slate-100 min-h-screen">
+    <div className="p-6 bg-slate-100 mx-0 min-h-screen">
       <div className="bg-white rounded-xl p-6 space-y-6">
         <h2 className="text-2xl font-semibold">
           HR – Employee Task Timeline
@@ -343,7 +343,7 @@ export default function HrTimeline() {
                       </td>
 
                       <td className="px-5 py-4">
-                        <div className="relative h-6 bg-gray-100 rounded w-full">
+                        <div className="relative h-6 rounded w-full">
                           {task.sessions.map((s, si) => {
                             const end = s.end || now;
                             return (

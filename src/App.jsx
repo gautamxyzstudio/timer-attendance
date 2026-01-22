@@ -1,66 +1,50 @@
 import { useEffect, useRef, useState } from "react";
-import { getUser, logout } from "./auth.js";
-import Login from "./login.jsx";
-import AttendanceApp from "./AttendanceApp.jsx";
-import Nav from "./navbar.jsx";
-import HrTimeline from "./HrTimeline.jsx";
-
+import { getUser, logout } from "./auth";
+import Login from "./login";
+import AttendanceApp from "./AttendanceApp";
+import Nav from "./navbar";
+import HrTimeline from "./HrTimeline";
 
 export default function App() {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
-
-  // reference to AttendanceApp safe logout
   const logoutRef = useRef(null);
 
   useEffect(() => {
-    const u = getUser();
-    setUser(u);
+    setUser(getUser());
     setLoading(false);
   }, []);
 
-  if (loading) {
-    return <h2 className="p-4">Loading...</h2>;
-  }
+  if (loading) return <div>Loading...</div>;
 
-  // 🔐 NOT LOGGED IN
-  if (!user) {
-    return <Login onLogin={setUser} />;
-  }
+  if (!user) return <Login onLogin={setUser} />;
 
   return (
     <div className="h-screen">
-      {/* NAVBAR */}
       <Nav
-        user={user}
-        onHome={() => {}}
-        onAddTask={() => console.log("Add Task")}
+        username={user.username}
         onLogout={() => {
-          // 🔥 THIS IS THE KEY LINE
           if (logoutRef.current) {
-            logoutRef.current(); // calls AttendanceApp.safeLogout()
+            logoutRef.current(); // SAFE logout
           }
         }}
       />
 
-      {/* CONTENT */}
-     <div className="pt-14 px-6">
-  {user.user_type === "Hr" ? (
-    <HrTimeline />
-  ) : (
-    <AttendanceApp
-      user={user}
-      registerLogoutHandler={(fn) => {
-        logoutRef.current = fn;
-      }}
-      onLogout={() => {
-        logout();
-        setUser(null);
-      }}
-    />
-  )}
-</div>
-
+      <div className="pt-14 px-6">
+        {user.user_type === "Hr" ? (
+          <HrTimeline />
+        ) : (
+          <AttendanceApp
+            onLogout={() => {
+              logout();
+              setUser(null);
+            }}
+            registerLogoutHandler={(fn) => {
+              logoutRef.current = fn;
+            }}
+          />
+        )}
+      </div>
     </div>
   );
 }
