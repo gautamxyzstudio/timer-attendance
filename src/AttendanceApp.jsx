@@ -503,6 +503,15 @@ const getLiveSeconds = (task) => {
   );
 };
 
+/* ================= ELECTRON SYNC (ADD HERE) ================= */
+
+const syncTaskRunningToElectron = (isRunning) => {
+  if (window.electronAPI?.setTaskRunning) {
+    console.log("📤 Sync TASK_RUNNING →", isRunning);
+    window.electronAPI.setTaskRunning(isRunning);
+  }
+};
+
 /* ================= COMPONENT ================= */
 
 export default function AttendanceApp() {
@@ -529,6 +538,7 @@ export default function AttendanceApp() {
       setTodayLog(res.data.work_log);
     });
 
+
     api.get("/work-logs/completed").then((res) => {
       const list = Array.isArray(res.data)
         ? res.data
@@ -549,8 +559,8 @@ export default function AttendanceApp() {
   // ✅ Today → show ALL tasks (including Daily Meeting)
   const todayTasks = hasAttendance
     ? (todayLog.tasks || []).filter(
-        (t) => t.createdAt?.slice(0, 10) === today
-      )
+      (t) => t.createdAt?.slice(0, 10) === today
+    )
     : [];
 
   // ❌ EXCLUDE DAILY MEETING FROM NON-TODAY VIEWS
@@ -570,10 +580,10 @@ export default function AttendanceApp() {
     activeTab === "today"
       ? todayTasks
       : activeTab === "in-progress"
-      ? inProgressTasks
-      : activeTab === "completed"
-      ? completedTasks
-      : [];
+        ? inProgressTasks
+        : activeTab === "completed"
+          ? completedTasks
+          : [];
 
   /* ================= BACKEND ACTIONS ================= */
 
@@ -591,6 +601,9 @@ export default function AttendanceApp() {
         task_id: task.task_id,
       });
       setTodayLog(res.data);
+
+      syncTaskRunningToElectron(true);
+
     } catch (err) {
       alert(err.response?.data?.error || "Failed to start task");
     } finally {
@@ -608,6 +621,9 @@ export default function AttendanceApp() {
         workLogId: todayLog.id,
       });
       setTodayLog(res.data);
+
+      syncTaskRunningToElectron(false);
+
     } catch (err) {
       alert(err.response?.data?.error || "Failed to stop task");
     } finally {
@@ -645,131 +661,133 @@ export default function AttendanceApp() {
   /* ================= UI ================= */
 
   return (
-    <div className="flex min-h-screen bg-gray-50">
-      <Sidebar
-        activeFilter={activeTab}
-        setActiveFilter={setActiveTab}
-        todayCount={todayTasks.length}
-        inProgressCount={inProgressTasks.length}
-        completedCount={completedTasks.length}
-      />
+    <>
+      <div className="flex min-h-screen bg-gray-50">
+        <Sidebar
+          activeFilter={activeTab}
+          setActiveFilter={setActiveTab}
+          todayCount={todayTasks.length}
+          inProgressCount={inProgressTasks.length}
+          completedCount={completedTasks.length}
+        />
 
-      <main className="flex-1 p-6">
-        <h2 className="text-3xl font-semibold text-blue-600 mb-6">
-          Employee Work Log
-        </h2>
+        <main className="flex-1 p-6">
+          <h2 className="text-3xl font-semibold text-blue-600 mb-6">
+            Employee Work Log
+          </h2>
 
-        {activeTab === "today" && hasAttendance && (
-          <AddTask
-            workLogId={todayLog.id}
-            onTaskAdded={(task) =>
-              setTodayLog((prev) => ({
-                ...prev,
-                tasks: [...(prev.tasks || []), task],
-              }))
-            }
-          />
-        )}
+          {activeTab === "today" && hasAttendance && (
+            <AddTask
+              workLogId={todayLog.id}
+              onTaskAdded={(task) =>
+                setTodayLog((prev) => ({
+                  ...prev,
+                  tasks: [...(prev.tasks || []), task],
+                }))
+              }
+            />
+          )}
 
-        {activeTab === "today" && !hasAttendance && (
-          <div className="text-gray-500 mt-6">
-            You have not checked in today.
-          </div>
-        )}
+          {activeTab === "today" && !hasAttendance && (
+            <div className="text-gray-500 mt-6">
+              You have not checked in today.
+            </div>
+          )}
 
-        <table className="w-full mt-6 bg-white shadow text-sm">
-          <thead className="bg-gray-100">
-            <tr>
-              {showLiveControls && (
-                <th className="p-3 text-center">Done</th>
-              )}
-              <th className="p-3">Task</th>
-              <th className="p-3">Project</th>
-              <th className="p-3">Status</th>
-              <th className="p-3">Date</th>
-              <th className="p-3">Time</th>
-              {showLiveControls && (
-                <th className="p-3">Action</th>
-              )}
-            </tr>
-          </thead>
+          <table className="w-full mt-6 bg-white shadow text-sm">
+            <thead className="bg-gray-100">
+              <tr>
+                {showLiveControls && (
+                  <th className="p-3 text-center">Done</th>
+                )}
+                <th className="p-3">Task</th>
+                <th className="p-3">Project</th>
+                <th className="p-3">Status</th>
+                <th className="p-3">Date</th>
+                <th className="p-3">Time</th>
+                {showLiveControls && (
+                  <th className="p-3">Action</th>
+                )}
+              </tr>
+            </thead>
 
-          <tbody>
-            {visibleTasks.map((task) => {
-              const isCompleted = task.status === "completed";
+            <tbody>
+              {visibleTasks.map((task) => {
+                const isCompleted = task.status === "completed";
 
-              return (
-                <tr
-                  key={`${task.task_id}-${task.createdAt}`}
-                  className="border-t"
-                >
-                  {showLiveControls && (
-                    <td className="text-center">
-                      {isCompleted ? (
-                        <input type="checkbox" checked disabled />
-                      ) : (
-                        <input
-                          type="checkbox"
-                          onChange={() =>
-                            completeTask(task.task_id)
-                          }
-                          disabled={pending}
-                        />
+                return (
+                  <tr
+                    key={`${task.task_id}-${task.createdAt}`}
+                    className="border-t"
+                  >
+                    {showLiveControls && (
+                      <td className="text-center">
+                        {isCompleted ? (
+                          <input type="checkbox" checked disabled />
+                        ) : (
+                          <input
+                            type="checkbox"
+                            onChange={() =>
+                              completeTask(task.task_id)
+                            }
+                            disabled={pending}
+                          />
+                        )}
+                      </td>
+                    )}
+
+                    <td className="p-3">{task.task_title}</td>
+                    <td className="p-3">
+                      {task.project?.title || "—"}
+                    </td>
+                    <td className="p-3">{task.status}</td>
+                    <td className="p-3">
+                      {task.work_date ||
+                        task.createdAt?.slice(0, 10)}
+                    </td>
+                    <td className="p-3 font-mono">
+                      {formatHMS(
+                        isCompleted
+                          ? task.time_spent || 0
+                          : getLiveSeconds(task)
                       )}
                     </td>
-                  )}
 
-                  <td className="p-3">{task.task_title}</td>
-                  <td className="p-3">
-                    {task.project?.title || "—"}
-                  </td>
-                  <td className="p-3">{task.status}</td>
-                  <td className="p-3">
-                    {task.work_date ||
-                      task.createdAt?.slice(0, 10)}
-                  </td>
-                  <td className="p-3 font-mono">
-                    {formatHMS(
-                      isCompleted
-                        ? task.time_spent || 0
-                        : getLiveSeconds(task)
+                    {showLiveControls && (
+                      <td className="p-3">
+                        {!isCompleted &&
+                          (task.is_running ? (
+                            <button
+                              onClick={stopTask}
+                              disabled={pending}
+                              className="text-red-600"
+                            >
+                              Stop
+                            </button>
+                          ) : (
+                            <button
+                              onClick={() => startTask(task)}
+                              disabled={pending}
+                              className="text-blue-600"
+                            >
+                              Start
+                            </button>
+                          ))}
+                      </td>
                     )}
-                  </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
 
-                  {showLiveControls && (
-                    <td className="p-3">
-                      {!isCompleted &&
-                        (task.is_running ? (
-                          <button
-                            onClick={stopTask}
-                            disabled={pending}
-                            className="text-red-600"
-                          >
-                            Stop
-                          </button>
-                        ) : (
-                          <button
-                            onClick={() => startTask(task)}
-                            disabled={pending}
-                            className="text-blue-600"
-                          >
-                            Start
-                          </button>
-                        ))}
-                    </td>
-                  )}
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-
-        {activeTab === "today" && hasAttendance && (
-          <div className="mt-4 font-semibold">
-            ⏱ Today’s Total Time: {formatHMS(totalTodaySeconds)}
-          </div>
-        )}
-      </main>
-    </div>
+          {activeTab === "today" && hasAttendance && (
+            <div className="mt-4 font-semibold">
+              ⏱ Today’s Total Time: {formatHMS(totalTodaySeconds)}
+            </div>
+          )}
+        </main>
+      </div>
+    </>
   );
 }
