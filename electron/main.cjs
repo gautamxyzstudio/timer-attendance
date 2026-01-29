@@ -48,6 +48,39 @@ function createMainWindow() {
   mainWindow.webContents.openDevTools({ mode: "detach" });
 }
 
+
+// function createMainWindow() {
+//   mainWindow = new BrowserWindow({
+//     width: 680,
+//     height: 480,
+
+//     // 🔒 HARD LOCK SIZE
+//     resizable: false,
+//     maximizable: false,
+//     fullscreenable: false,
+
+//     // 🧼 UI polish
+//     autoHideMenuBar: true,
+//     useContentSize: true,
+
+//     webPreferences: {
+//       preload: path.join(__dirname, "preload.cjs"),
+//       contextIsolation: true,
+//       nodeIntegration: false
+//     }
+//   });
+
+//   // 🔒 ABSOLUTE SIZE LOCK (cannot be bypassed)
+//   mainWindow.setMinimumSize(680, 480);
+//   mainWindow.setMaximumSize(680, 480);
+
+//   mainWindow.loadURL("http://localhost:5173");
+
+//   // OPTIONAL: remove this in production
+//   mainWindow.webContents.openDevTools({ mode: "detach" });
+// }
+
+
 /* ================= HELPERS ================= */
 
 function centerWindow(win) {

@@ -1,323 +1,3 @@
-// import { useEffect, useRef, useState } from "react";
-// import api from "./api";
-// import AddTask from "./addTask";
-// import Sidebar from "./Sidebar";
-
-// /* ================= HELPERS ================= */
-
-// const todayDate = () => new Date().toISOString().slice(0, 10);
-
-// const formatHMS = (seconds = 0) => {
-//   const h = Math.floor(seconds / 3600);
-//   const m = Math.floor((seconds % 3600) / 60);
-//   const s = seconds % 60;
-//   return `${h.toString().padStart(2, "0")}:${m
-//     .toString()
-//     .padStart(2, "0")}:${s.toString().padStart(2, "0")}`;
-// };
-
-// const getLiveSeconds = (task) => {
-//   if (!task.is_running || !task.last_started_at) {
-//     return task.time_spent || 0;
-//   }
-
-//   return (
-//     (task.time_spent || 0) +
-//     Math.floor((Date.now() - new Date(task.last_started_at)) / 1000)
-//   );
-// };
-
-// /* ================= ELECTRON SYNC ================= */
-
-// const syncTaskRunningToElectron = (isRunning) => {
-//   if (window.electronAPI?.setTaskRunning) {
-//     window.electronAPI.setTaskRunning(isRunning);
-//   }
-// };
-
-// /* ================= COMPONENT ================= */
-
-// export default function AttendanceApp() {
-//   const [todayLog, setTodayLog] = useState(null);
-//   const [historyTasks, setHistoryTasks] = useState([]);
-//   const [activeTab, setActiveTab] = useState("today");
-//   const [pending, setPending] = useState(false);
-
-//   const [, forceTick] = useState(0);
-//   const initRef = useRef(false);
-
-//   /* ================= GLOBAL TICK ================= */
-//   useEffect(() => {
-//     const i = setInterval(() => forceTick((t) => t + 1), 1000);
-//     return () => clearInterval(i);
-//   }, []);
-
-//   /* ================= LOAD DATA ================= */
-//   useEffect(() => {
-//     if (initRef.current) return;
-//     initRef.current = true;
-
-//     api.post("/work-logs/today").then((res) => {
-//       const log = res.data.work_log;
-//       setTodayLog(log);
-
-//       const isAnyRunning = log?.tasks?.some((t) => t.is_running);
-//       syncTaskRunningToElectron(isAnyRunning);
-//     });
-
-//     api.get("/work-logs/completed").then((res) => {
-//       const list = Array.isArray(res.data)
-//         ? res.data
-//         : res.data?.data || [];
-//       setHistoryTasks(list);
-//     });
-//   }, []);
-
-//   /* ================= ELECTRON FORCE STOP ================= */
-// useEffect(() => {
-//   if (!window.electronAPI?.onForceStopTasks) return;
-//   if (!todayLog?.id) return;
-
-//   const handler = async () => {
-//     console.log("🛑 Force stop received → updating UI");
-
-//     try {
-//       const res = await api.post("/work-logs/stop-timer", {
-//         workLogId: todayLog.id,
-//       });
-
-//       if (res?.data) {
-//         setTodayLog(res.data); // 🔥 THIS stops timer visually
-//       }
-//     } catch (err) {
-//       console.error("❌ Force stop sync failed", err);
-//     }
-//   };
-
-//   window.electronAPI.onForceStopTasks(handler);
-// }, [todayLog?.id]);
-
-
-//   /* ================= ATTENDANCE FLAG ================= */
-//   const hasAttendance = todayLog?.has_attendance !== false;
-
-//   /* ================= FILTERS ================= */
-
-//   const today = todayDate();
-
-//   const todayTasks = hasAttendance
-//     ? (todayLog?.tasks || []).filter(
-//         (t) => t.createdAt?.slice(0, 10) === today
-//       )
-//     : [];
-
-//   const inProgressTasks = historyTasks.filter(
-//     (t) => t.status === "in-progress" && t.task_key !== "DAILY_MEETING"
-//   );
-
-//   const completedTasks = historyTasks.filter(
-//     (t) => t.status === "completed" && t.task_key !== "DAILY_MEETING"
-//   );
-
-//   const visibleTasks =
-//     activeTab === "today"
-//       ? todayTasks
-//       : activeTab === "in-progress"
-//       ? inProgressTasks
-//       : completedTasks;
-
-//   /* ================= BACKEND ACTIONS ================= */
-
-//   const startTask = async (task) => {
-//     if (!hasAttendance || pending) return;
-//     setPending(true);
-
-//     try {
-//       const res = await api.post("/work-logs/start-timer", {
-//         workLogId: todayLog.id,
-//         task_id: task.task_id,
-//       });
-//       setTodayLog(res.data);
-//       syncTaskRunningToElectron(true);
-//     } finally {
-//       setPending(false);
-//     }
-//   };
-
-//   const stopTask = async () => {
-//     if (!hasAttendance || pending) return;
-//     setPending(true);
-
-//     try {
-//       const res = await api.post("/work-logs/stop-timer", {
-//         workLogId: todayLog.id,
-//       });
-//       setTodayLog(res.data);
-
-//       const isAnyRunning =
-//         res?.data?.tasks?.some((t) => t.is_running) ?? false;
-//       syncTaskRunningToElectron(isAnyRunning);
-//     } finally {
-//       setPending(false);
-//     }
-//   };
-
-//   const completeTask = async (task_id) => {
-//     if (!hasAttendance || pending) return;
-//     setPending(true);
-
-//     try {
-//       const res = await api.put(
-//         `/work-logs/${todayLog.id}/update-task`,
-//         { data: { task_id, status: "completed" } }
-//       );
-//       setTodayLog(res.data);
-//     } finally {
-//       setPending(false);
-//     }
-//   };
-
-//   /* ================= TOTAL TIME ================= */
-
-//   const totalTodaySeconds = todayTasks.reduce(
-//     (sum, t) => sum + getLiveSeconds(t),
-//     0
-//   );
-
-//   const showLiveControls = activeTab === "today" && hasAttendance;
-
-//   /* ================= UI ================= */
-
-//   return (
-//     <div className="flex min-h-screen bg-gray-50">
-//       <Sidebar
-//         activeFilter={activeTab}
-//         setActiveFilter={setActiveTab}
-//         todayCount={todayTasks.length}
-//         inProgressCount={inProgressTasks.length}
-//         completedCount={completedTasks.length}
-//       />
-
-//       <main className="flex-1 p-6">
-//         {!todayLog ? (
-//           <div>Loading...</div>
-//         ) : (
-//           <>
-//             <h2 className="text-3xl font-semibold text-blue-600 mb-6">
-//               Employee Work Log
-//             </h2>
-
-//             {activeTab === "today" && hasAttendance && (
-//               <AddTask
-//                 workLogId={todayLog.id}
-//                 onTaskAdded={(task) =>
-//                   setTodayLog((prev) => ({
-//                     ...prev,
-//                     tasks: [...(prev.tasks || []), task],
-//                   }))
-//                 }
-//               />
-//             )}
-
-//             <table className="w-full mt-6 bg-white shadow text-sm">
-//               <thead className="bg-gray-100">
-//                 <tr>
-//                   {showLiveControls && (
-//                     <th className="p-3 text-center">Done</th>
-//                   )}
-//                   <th className="p-3">Task</th>
-//                   <th className="p-3">Project</th>
-//                   <th className="p-3">Status</th>
-//                   <th className="p-3">Date</th>
-//                   <th className="p-3">Time</th>
-//                   {showLiveControls && (
-//                     <th className="p-3">Action</th>
-//                   )}
-//                 </tr>
-//               </thead>
-
-//               <tbody>
-//                 {visibleTasks.map((task) => {
-//                   const isCompleted = task.status === "completed";
-
-//                   return (
-//                     <tr
-//                       key={`${task.task_id}-${task.createdAt}`}
-//                       className="border-t"
-//                     >
-//                       {showLiveControls && (
-//                         <td className="text-center">
-//                           {isCompleted ? (
-//                             <input type="checkbox" checked disabled />
-//                           ) : (
-//                             <input
-//                               type="checkbox"
-//                               onChange={() =>
-//                                 completeTask(task.task_id)
-//                               }
-//                               disabled={pending}
-//                             />
-//                           )}
-//                         </td>
-//                       )}
-
-//                       <td className="p-3">{task.task_title}</td>
-//                       <td className="p-3">
-//                         {task.project?.title || "—"}
-//                       </td>
-//                       <td className="p-3">{task.status}</td>
-//                       <td className="p-3">
-//                         {task.work_date ||
-//                           task.createdAt?.slice(0, 10)}
-//                       </td>
-//                       <td className="p-3 font-mono">
-//                         {formatHMS(
-//                           isCompleted
-//                             ? task.time_spent || 0
-//                             : getLiveSeconds(task)
-//                         )}
-//                       </td>
-
-//                       {showLiveControls && (
-//                         <td className="p-3">
-//                           {!isCompleted &&
-//                             (task.is_running ? (
-//                               <button
-//                                 onClick={stopTask}
-//                                 disabled={pending}
-//                                 className="text-red-600"
-//                               >
-//                                 Stop
-//                               </button>
-//                             ) : (
-//                               <button
-//                                 onClick={() => startTask(task)}
-//                                 disabled={pending}
-//                                 className="text-blue-600"
-//                               >
-//                                 Start
-//                               </button>
-//                             ))}
-//                         </td>
-//                       )}
-//                     </tr>
-//                   );
-//                 })}
-//               </tbody>
-//             </table>
-
-//             {activeTab === "today" && hasAttendance && (
-//               <div className="mt-4 font-semibold">
-//                 ⏱ Today’s Total Time: {formatHMS(totalTodaySeconds)}
-//               </div>
-//             )}
-//           </>
-//         )}
-//       </main>
-//     </div>
-//   );
-// }
-
 import { useEffect, useRef, useState } from "react";
 import api from "./api";
 import AddTask from "./addTask";
@@ -630,7 +310,7 @@ export default function AttendanceApp() {
   return (
     <div className="min-h-screen flex items-center justify-center bg-[#f3f3f3]">
       <div style={{ width: 680, height: 480 }}>
-        <div className="bg-white rounded-2xl shadow h-full p-4 flex flex-col">
+        <div className="bg-[#F7F7F7] rounded-2xl shadow h-full p-4 flex flex-col">
 
           {/* ===== BLACK BAR ===== */}
           <div
@@ -711,11 +391,11 @@ export default function AttendanceApp() {
             />
 
             {/* RIGHT SIDE */}
-            <div className="flex-1 overflow-hidden">
+            <div style={{ width: 515 }} className="flex-1 overflow-hidden pt-2 bg-white rounded-xl shadow-sm">
 
               {/* ADD TASK */}
               {activeTab === "today" && (
-                <div className="mb-3" style={{ width: 491, height: 36 }}>
+                <div className="mb-3 px-3" style={{ width: 491, height: 36 }}>
                   <AddTask
                     workLogId={todayLog.id}
                     onTaskAdded={(task, tempId) =>
@@ -752,24 +432,41 @@ export default function AttendanceApp() {
               <div className="w-[490] h-px bg-[#FF7300] mb-2" />
 
               {/* TABLE */}
-              <div className="overflow-auto py-2  no-scrollbar" style={{ height: 260 }}>
+              <div className="overflow-auto py-2 mx-3 no-scrollbar" style={{ height: 260 }}>
                 <table className="w-full bg-white rounded-xl text-sm">
                   <thead className="bg-gray-50">
                     <tr className="rounded-xl bg-[#F7F7F7]">
+                      {/* Done */}
                       <th className="p-2"></th>
+
+                      {/* Task (ALWAYS visible) */}
                       <th className="p-2 text-left text-md font-normal">Task</th>
-                      <th className="p-2 text-md font-normal">Project</th>
-                      <th className="p-2 text-md font-normal">Status</th>
-                      <th className="p-2 text-md font-normal">Time</th>
-                      <th className="p-2 text-md font-normal">Action</th>
+
+                      {/* Completed-only columns */}
+                      {activeTab === "completed" && (
+                        <th className="p-2 text-md font-normal">Project</th>
+                      )}
+
+                      {activeTab === "completed" && (
+                        <th className="p-2 text-md font-normal">Status</th>
+                      )}
+
+                      {/* Time (ALWAYS visible) */}
+                      <th className="p-2 text-md text-left font-normal">Time</th>
+
+                      {/* Action (TODAY only) */}
+                      {activeTab !== "completed" && (
+                        <th className="p-2 text-md font-normal">Action</th>
+                      )}
                     </tr>
+
                   </thead>
 
                   <tbody>
                     {visibleTasks.map((task) => (
                       <tr
                         key={`${task.task_id}-${task.createdAt}`}
-                        className="border-b"
+                        className="border-b h-12"
                       >
                         <td className="p-2">
                           <div className="flex items-center justify-center h-full">
@@ -783,65 +480,85 @@ export default function AttendanceApp() {
                             ) : (
                               // ⬜ In-progress (custom empty box)
                               <button
+                                disabled={task.task_key === "DAILY_MEETING"}
                                 onClick={() => completeTask(task)}
-                                className="w-4 h-4 border-2 border-gray-500 rounded-sm
-                   flex items-center justify-center cursor-pointer"
+                                className={`w-4 h-4 border-2 rounded-sm flex items-center justify-center
+    ${task.task_key === "DAILY_MEETING"
+                                    ? "border-gray-300 cursor-not-allowed opacity-40"
+                                    : "border-gray-500 cursor-pointer"
+                                  }`}
                                 aria-label="Complete task"
                               />
+
                             )}
                           </div>
                         </td>
 
 
 
-                        <td className="p-2 text-sm">{task.task_title}</td>
-                        <td className="p-2 text-sm">{task.project?.title || "—"}</td>
+                        <td
+                          className={`p-2 text-sm ${task.is_running ? "text-green-500" : "text-gray-800"
+                            }`}
+                        >
+                          {task.task_title}
+                        </td>
+                        {activeTab === "completed" && (
+                          <td className="p-2 text-sm">
+                            {task.project?.title || "—"}
+                          </td>
+                        )}
 
-                        <td className="p-2">
+                        {activeTab === "completed" && (
+                          <td className="p-2">
+                            <span
+                              className={`inline-flex items-center justify-center
+        px-2 py-1 pb-2 rounded-lg text-[12px]
+        whitespace-nowrap leading-none
+        ${task.status === "completed"
+                                  ? "bg-green-100 text-green-600"
+                                  : "bg-orange-100 text-orange-600"
+                                }`}
+                            >
+                              {task.status}
+                            </span>
+                          </td>
+                        )}
+
+
+                        <td className="p-2 font-mono">
                           <span
-                            className={`inline-flex items-center justify-center
-      px-2 py-1 rounded-full text-[12px]
-      whitespace-nowrap leading-none
-      ${task.status === "completed"
-                                ? "bg-green-100 text-green-600"
-                                : "bg-orange-100 text-orange-600"
+                            className={`inline-block px-2 py-1 rounded-md text-sm ${task.is_running
+                                ? "bg-green-100 text-green-500"
+                                : "bg-transparent text-gray-800"
                               }`}
                           >
-                            {task.status}
+                            {formatHMS(getLiveSeconds(task))}
                           </span>
                         </td>
 
 
-                        <td className="p-2 font-mono">
-                          {formatHMS(getLiveSeconds(task))}
-                        </td>
+                        {activeTab !== "completed" && (
+                          <td className="p-2 text-center">
+                            {task.is_running ? (
+                              <button
+                                onClick={stopTask}
+                                className="w-6 h-6 rounded-full bg-[#FF7300] text-white"
+                              >
+                                ❚❚
+                              </button>
+                            ) : (
+                              <button
+                                onClick={() => startTask(task)}
+                                disabled={isLunchBreak()}
+                                className={`w-7 h-7 rounded-full ${isLunchBreak() ? "opacity-40 cursor-not-allowed" : ""
+                                  }`}
+                              >
+                                ▶
+                              </button>
+                            )}
+                          </td>
+                        )}
 
-                        <td className="p-2 text-center">
-                          {task.status === "completed" ? (
-                            <button
-                              disabled
-                              className="w-7 h-7 rounded-full text-gray-400 cursor-not-allowed"
-                            >
-                              ▶
-                            </button>
-                          ) : task.is_running ? (
-                            <button
-                              onClick={stopTask}
-                              className="w-6 h-6 rounded-full bg-[#FF7300] text-white"
-                            >
-                              ❚❚
-                            </button>
-                          ) : (
-                            <button
-                              onClick={() => startTask(task)}
-                              disabled={isLunchBreak()}
-                              className={`w-7 h-7 rounded-full ${isLunchBreak() ? "opacity-40 cursor-not-allowed" : ""
-                                }`}
-                            >
-                              ▶
-                            </button>
-                          )}
-                        </td>
                       </tr>
                     ))}
                   </tbody>

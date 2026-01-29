@@ -7,3 +7,23 @@
   -ms-overflow-style: none;
   scrollbar-width: none;
 }
+
+/* 🔒 Disable scrolling at root level */
+html,
+body,
+#root {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  overflow: hidden; /* 🚫 removes scroll */
+}
+ 
+/* 👻 Hide scrollbars (extra safety) */
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
