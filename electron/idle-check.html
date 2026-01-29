@@ -23,25 +23,23 @@
         <circle cx="56" cy="56" r="48"
           class="fill-none stroke-gray-200 stroke-[10]" />
         <circle id="progress" cx="56" cy="56" r="48"
-          class="fill-none stroke-green-500 stroke-[10]"
+          class="fill-none stroke-green-500 stroke-[10] rounded-full"
           stroke-dasharray="302"
           stroke-dashoffset="0" />
       </svg>
-
       <div id="count"
         class="absolute inset-0 flex items-center justify-center text-2xl font-semibold text-green-500">
         60
       </div>
     </div>
 
+    <!-- ACTIONS -->
     <div class="flex gap-3">
-      <button
-        onclick="respondYes()"
+      <button onclick="respond('working')"
         class="flex-1 h-10 rounded-xl bg-orange-500 text-white font-medium">
         Working
       </button>
-      <button
-        onclick="respondNo()"
+      <button onclick="respond('not-working')"
         class="flex-1 h-10 rounded-xl bg-gray-100 text-gray-500 font-medium">
         Not Working
       </button>
@@ -64,18 +62,15 @@
 
       if (sec <= 0) {
         clearInterval(timer);
-        window.electronAPI.popupResponse("timeout");
+        window.electronAPI.openIdleCounter();
+        window.close();
       }
     }, 1000);
 
-    function respondYes() {
+    function respond(val) {
       clearInterval(timer);
-      window.electronAPI.popupResponse("yes");
-    }
-
-    function respondNo() {
-      clearInterval(timer);
-      window.electronAPI.popupResponse("timeout");
+      window.electronAPI.popupResponse({ result: val });
+      window.close();
     }
   </script>
 </body>

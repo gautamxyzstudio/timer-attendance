@@ -18,29 +18,33 @@ export default function Login({ onLogin }) {
   };
 
   return (
-    <div className="w-screen h-screen bg-[#f3f3f3] flex items-center justify-center">
-      <div className="bg-white w-xl px-14 py-10 rounded-md shadow-[0_4px_12px_rgba(0,0,0,0.12)]">
+    <div className="w-screen h-screen bg-gray-300 flex items-center justify-center">
+      <div style={{ width: "680px", height: "480px" }}
+    className="flex items-center justify-center bg-[#F3F4F6] ">
+      <div
+        className="bg-white rounded-md shadow-[0_4px_12px_rgba(0,0,0,0.12)] box-border"
+        style={{ width: "372px", height: "352px", padding: "24px 28px" }}
+      >
 
         {/* Logo */}
-        <div className="flex justify-center mb-6">
-          <img src={logo} alt="X Studio" className="h-11" />
+        <div className="flex justify-center mb-3">
+          <img src={logo} alt="X Studio" className="h-6" />
         </div>
 
         {/* Title */}
-        <h1 className="text-3xl font-medium text-center text-[#797571]">
+        <h1 className="text-2xl font-medium text-center text-[#797571]">
           Welcome
         </h1>
-        <p className="text-sm text-[#797571] text-center mb-8">
+        <p className="text-xs text-[#797571] text-center mb-5">
           Log in to your account
         </p>
 
         {/* Email */}
         <div className="mb-5">
-          <label className="block text-md text-black mb-1">Email</label>
           <input
             type="email"
             placeholder="Enter your email"
-            className="w-full h-11 px-4 border border-[#D6D4D2] rounded-xl bg-[#F7F7F6] text-md outline-none"
+            className="w-full h-10 px-4 border border-[#D6D4D2] rounded-xl bg-[#F7F7F6] text-sm outline-none"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
           />
@@ -48,13 +52,12 @@ export default function Login({ onLogin }) {
 
         {/* Password */}
         <div className="mb-4">
-          <label className="block text-md text-black mb-1">Password</label>
 
           <div className="relative">
             <input
               type={showPassword ? "text" : "password"}
               placeholder="Password"
-              className="w-full h-11 px-4 pr-10 border border-[#D6D4D2] rounded-xl bg-[#F7F7F6] text-md outline-none"
+              className="w-full h-10 px-4 pr-10 border border-[#D6D4D2] rounded-xl bg-[#F7F7F6] text-sm outline-none"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
             />
@@ -117,7 +120,7 @@ export default function Login({ onLogin }) {
         </div>
 
         {/* Remember me */}
-        <div className="flex items-center mb-8">
+        <div className="flex items-center mb-4">
           <input
             type="checkbox"
             id="rememberMe"
@@ -134,12 +137,13 @@ export default function Login({ onLogin }) {
         <div className="flex justify-center">
           <button
             onClick={handleLogin}
-            className="w-32 h-10 bg-[#E47A0E] text-white text-md font-medium rounded-xl hover:bg-[#d96f0c] transition"
+            className="w-80 h-10 bg-[#E47A0E] text-white text-sm font-medium rounded-xl hover:bg-[#d96f0c] transition"
           >
             Login
           </button>
         </div>
 
+      </div>
       </div>
     </div>
   );

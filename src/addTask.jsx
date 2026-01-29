@@ -8,20 +8,20 @@ const AddTask = ({ workLogId, onTaskAdded }) => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
-  /* ✅ FETCH ASSIGNED PROJECTS */
+  /* ================= FETCH PROJECTS ================= */
   useEffect(() => {
     const fetchProjects = async () => {
       try {
         const res = await api.get("/projects/myProjects");
-        setProjects(res.data || []); // ✅ FIXED (plain array)
+        setProjects(res.data || []);
       } catch {
         setError("Failed to load projects");
       }
     };
-
     fetchProjects();
   }, []);
 
+  /* ================= ADD TASK ================= */
   const handleAddTask = async () => {
     if (!workLogId) {
       setError("Today's work log not found");
@@ -38,6 +38,22 @@ const AddTask = ({ workLogId, onTaskAdded }) => {
       return;
     }
 
+    // 🔹 TEMP TASK (for instant UI)
+    const tempId = `temp-${Date.now()}`;
+    const tempTask = {
+      task_id: tempId,
+      task_title: taskTitle.trim(),
+      project: projects.find((p) => p.id === Number(projectId)),
+      status: "in-progress",
+      time_spent: 0,
+      is_running: false,
+      createdAt: new Date().toISOString(),
+      __temp: true,
+    };
+
+    // 🚀 ADD TO UI IMMEDIATELY
+    onTaskAdded?.(tempTask);
+
     try {
       setLoading(true);
       setError("");
@@ -52,16 +68,20 @@ const AddTask = ({ workLogId, onTaskAdded }) => {
         }
       );
 
-      const updatedTasks = res.data.tasks || [];
-      const newlyAddedTask = updatedTasks.at(-1);
+      const updatedTasks = res.data?.tasks || [];
+      const realTask = updatedTasks.at(-1);
 
-      if (onTaskAdded && newlyAddedTask) {
-        onTaskAdded(newlyAddedTask);
+      // 🔁 REPLACE TEMP TASK WITH REAL ONE
+      if (realTask) {
+        onTaskAdded?.(realTask, tempId);
       }
 
       setTaskTitle("");
       setProjectId("");
     } catch (err) {
+      // ❌ ROLLBACK TEMP TASK
+      onTaskAdded?.(null, tempId);
+
       setError(
         err.response?.data?.message || "Failed to add task"
       );
@@ -70,6 +90,7 @@ const AddTask = ({ workLogId, onTaskAdded }) => {
     }
   };
 
+  /* ================= UI ================= */
   return (
     <div className="w-full max-w-xl space-y-2">
       <div className="flex flex-col gap-2 sm:flex-row">
@@ -78,22 +99,23 @@ const AddTask = ({ workLogId, onTaskAdded }) => {
           type="text"
           placeholder="Enter task"
           value={taskTitle}
-          onChange={(e) => setTaskTitle(e.target.value)}
-          className="flex-1 rounded-md border border-gray-300 px-3 py-2 text-sm
-                     focus:border-blue-500 outline-none focus:ring-1 focus:ring-blue-500"
+          onChange={(e) => {
+            setTaskTitle(e.target.value);
+            if (error) setError("");
+          }}
+          className="flex-1 rounded-md border border-gray-300 px-3 py-2 text-sm outline-none"
         />
 
         {/* PROJECT SELECT */}
         <select
           value={projectId}
           onChange={(e) => setProjectId(e.target.value)}
-          className="rounded-md border border-gray-300 px-3 py-2 text-sm
-                     focus:border-blue-500 outline-none focus:ring-1 focus:ring-blue-500"
+          className="rounded-md border border-gray-300 px-3 py-2 text-[13px] outline-none"
         >
           <option value="">Select project</option>
           {projects.map((p) => (
             <option key={p.id} value={p.id}>
-              {p.title} {/* ✅ FIXED */}
+              {p.title}
             </option>
           ))}
         </select>
@@ -102,8 +124,8 @@ const AddTask = ({ workLogId, onTaskAdded }) => {
         <button
           onClick={handleAddTask}
           disabled={loading || !workLogId}
-          className="rounded-md bg-blue-300 px-4 py-2 text-sm font-medium text-black
-                     hover:bg-blue-400 disabled:cursor-not-allowed disabled:opacity-60"
+          className="rounded-md px-4 py-2 text-sm text-white disabled:opacity-60"
+          style={{ backgroundColor: "#FF7300" }}
         >
           {loading ? "Adding..." : "Add Task"}
         </button>
@@ -118,9 +140,7 @@ const AddTask = ({ workLogId, onTaskAdded }) => {
 
       {/* ERROR */}
       {error && (
-        <p className="text-xs text-red-600">
-          {error}
-        </p>
+        <p className="text-xs text-red-600">{error}</p>
       )}
     </div>
   );
