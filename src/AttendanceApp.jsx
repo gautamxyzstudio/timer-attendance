@@ -69,7 +69,7 @@ export default function AttendanceApp() {
   const [activeTab, setActiveTab] = useState("today");
   const [, forceTick] = useState(0);
   const [cachedUser, setCachedUser] = useState(() => getUserFromCache());
-
+  const lastRunningTaskRef = useRef(null);
 
   const initRef = useRef(false);
 
@@ -87,6 +87,8 @@ export default function AttendanceApp() {
       const hasRunning = todayLog?.tasks?.some(t => t.is_running);
 
       if (!hasRunning) return;
+
+      window.electronAPI?.setTaskRunning(false);
 
       try {
         const res = await api.get("/work-logs/today");
@@ -121,39 +123,169 @@ export default function AttendanceApp() {
     );
   }, []);
 
-  if (!todayLog) return null;
+  const isCheckedIn = Boolean(todayLog?.id);
 
-const isCheckedIn = Boolean(todayLog?.id);
+  /* ===== SEND WORKLOG ID TO ELECTRON ===== */
+useEffect(() => {
+  if (todayLog?.id) {
+    console.log("📤 Sending workLogId to Electron:", todayLog.id);
+    window.electronAPI?.setWorkLogId(todayLog.id);
+  }
+}, [todayLog?.id]);
+
 
   /* ===== FILTERS (FIXED) ===== */
 
   const today = todayDate();
 
   // 🟠 TODAY TAB → only today's IN-PROGRESS
-  const todayTasks = (todayLog.tasks || []).filter(
+  const todayTasks = (todayLog?.tasks || []).filter(
     (t) =>
       t.status === "in-progress" &&
       t.createdAt?.slice(0, 10) === today
   );
 
+
   // 🟢 COMPLETED TAB → only today's COMPLETED
-  const completedTasks = (todayLog.tasks || []).filter(
+  const completedTasks = (todayLog?.tasks || []).filter(
     (t) =>
       t.status === "completed" &&
       t.createdAt?.slice(0, 10) === today
   );
 
+
   const visibleTasks =
     activeTab === "today" ? todayTasks : completedTasks;
+
 
   /* ===== RUNNING TASK ===== */
   const runningTask = todayTasks.find((t) => t.is_running);
 
   const runningSeconds = runningTask ? getLiveSeconds(runningTask) : 0;
 
-  const totalTodaySeconds = (todayLog.tasks || [])
+  const totalTodaySeconds = (todayLog?.tasks || [])
     .filter((t) => t.createdAt?.slice(0, 10) === today)
     .reduce((sum, t) => sum + getLiveSeconds(t), 0);
+
+  /* ===== SYNC RUNNING TASK WITH ELECTRON ===== */
+  useEffect(() => {
+    if (!window.electronAPI?.setTaskRunning) return;
+
+    const isRunning = Boolean(runningTask);
+
+    console.log("📤 Sending TASK_RUNNING to Electron:", isRunning);
+
+    window.electronAPI.setTaskRunning(isRunning);
+  }, [runningTask]);
+
+
+  /* ===== FORCE STOP TASKS FROM ELECTRON ===== */
+  useEffect(() => {
+    if (!window.electronAPI?.onForceStopTasks) return;
+
+    const handleForceStop = async () => {
+      console.log("🛑 Electron requested FORCE STOP");
+
+      // 1️⃣ Optimistically stop in UI
+      setTodayLog((prev) => {
+        if (!prev) return prev;
+
+        return {
+          ...prev,
+          tasks: prev.tasks.map((t) =>
+            t.is_running
+              ? {
+                ...t,
+                is_running: false,
+                time_spent: getLiveSeconds(t),
+                last_started_at: null,
+              }
+              : t
+          ),
+        };
+      });
+
+      // 2️⃣ Stop backend timer (authoritative)
+      try {
+        await api.post("/work-logs/stop-timer", {
+          workLogId: todayLog?.id,
+        });
+      } catch (err) {
+        console.error("❌ Backend stop failed (force-stop)", err);
+      }
+
+      // 3️⃣ Sync Electron state
+      window.electronAPI?.setTaskRunning(false);
+    };
+
+    window.electronAPI.onForceStopTasks(handleForceStop);
+
+    return () => {
+      window.electronAPI.removeForceStopTasks?.(handleForceStop);
+    };
+  }, [todayLog]);
+
+  /* ===== RESUME TASKS FROM ELECTRON ===== */
+  useEffect(() => {
+    if (!window.electronAPI?.onResumeTasks) return;
+
+    const handleResume = async () => {
+      console.log("▶️ Electron requested RESUME TASK");
+
+      const taskId = lastRunningTaskRef.current;
+      if (!taskId || !todayLog) return;
+
+      const task = todayLog.tasks.find(t => t.task_id === taskId);
+      if (!task) return;
+
+      const now = new Date().toISOString();
+
+      // 1️⃣ Optimistic UI resume
+      setTodayLog((prev) => ({
+        ...prev,
+        tasks: prev.tasks.map((t) =>
+          t.task_id === taskId
+            ? {
+              ...t,
+              is_running: true,
+              status: "in-progress",
+              last_started_at: now,
+            }
+            : t
+        ),
+      }));
+
+      // 2️⃣ Backend resume
+      try {
+        await api.post("/work-logs/start-timer", {
+          workLogId: todayLog.id,
+          task_id: taskId,
+        });
+      } catch (err) {
+        console.error("❌ Resume failed", err);
+      }
+
+      // 3️⃣ Sync Electron state
+      window.electronAPI?.setTaskRunning(true);
+    };
+
+    window.electronAPI.onResumeTasks(handleResume);
+
+    return () => {
+      window.electronAPI.removeResumeTasks?.(handleResume);
+    };
+  }, [todayLog]);
+
+  useEffect(() => {
+    if (runningTask) {
+      lastRunningTaskRef.current = runningTask.task_id;
+      console.log("💾 Saved last running task:", runningTask.task_id);
+    }
+  }, [runningTask]);
+
+
+  if (!todayLog) return null;
+
 
   /* ===== ACTIONS (FIXED UI UPDATE) ===== */
 
@@ -224,19 +356,19 @@ const isCheckedIn = Boolean(todayLog?.id);
       ),
     }));
 
+    // 🔴 TELL ELECTRON IMMEDIATELY
+    window.electronAPI?.setTaskRunning(false);
+
     try {
       await api.post("/work-logs/stop-timer", {
         workLogId: todayLog.id,
       });
     } catch (err) {
       console.error("❌ Stop failed → rollback", err);
-
-      // 🔁 ROLLBACK UI
       setTodayLog(previousLog);
-
-      alert("Failed to stop task. Please try again.");
     }
   };
+
 
   const completeTask = async (task) => {
     // 🔒 Optimistic UI update (instant)
@@ -286,6 +418,7 @@ const isCheckedIn = Boolean(todayLog?.id);
         await api.post("/work-logs/stop-timer", {
           workLogId: todayLog.id,
         });
+          window.electronAPI?.setTaskRunning(false);
       }
     } catch (err) {
       console.error("❌ Failed to stop running task on logout", err);
@@ -300,6 +433,32 @@ const isCheckedIn = Boolean(todayLog?.id);
       window.location.href = "/";
     }
   };
+
+  const handleCheckout = async () => {
+  // 1️⃣ Stop backend (already working)
+  await api.post("/work-logs/checkout", {
+    workLogId: todayLog.id,
+  });
+
+  // 2️⃣ 🔥 STOP TASKS IN FRONTEND STATE (THIS WAS MISSING)
+  setTodayLog(prev => ({
+    ...prev,
+    tasks: prev.tasks.map(t =>
+      t.is_running
+        ? {
+            ...t,
+            is_running: false,
+            time_spent: getLiveSeconds(t),
+            last_started_at: null,
+          }
+        : t
+    ),
+  }));
+
+  // 3️⃣ 🔴 Tell Electron clearly
+  window.electronAPI?.setTaskRunning(false);
+};
+
 
   const displayUser = todayLog?.user ? {
     name: todayLog.user.user_detial?.name,
@@ -379,7 +538,7 @@ const isCheckedIn = Boolean(todayLog?.id);
 
             <div className="text-[13px]">
               Worked Today:{" "}
-              <span className="font-semibold">
+              <span className=" font-semibold">
                 {formatHMS(totalTodaySeconds)}
               </span>
             </div>
