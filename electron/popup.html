@@ -2,32 +2,25 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>Idle Check</title>
   <script src="https://cdn.tailwindcss.com"></script>
 </head>
 
-<body class="w-screen h-screen overflow-hidden bg-transparent flex items-center justify-center font-sans">
+<body class="w-screen h-screen bg-transparent flex items-center justify-center">
   <div class="w-[340px] bg-white rounded-2xl p-4 space-y-4">
-    <div>
-      <h3 class="text-base font-semibold text-black">
-        Hi. It seems kind of quiet, are you still working?
-      </h3>
-      <p class="text-sm text-gray-500 mt-1">
-        Clicking or typing anywhere means you’re working
-      </p>
-    </div>
+    <h3 class="text-base font-semibold">
+      Hi. It seems kind of quiet, are you still working?
+    </h3>
+    <p class="text-sm text-gray-500">
+      Clicking or typing anywhere means you’re working
+    </p>
 
-    <!-- TIMER -->
     <div class="relative w-28 h-28 mx-auto">
       <svg class="w-28 h-28 -rotate-90">
-        <circle cx="56" cy="56" r="48"
-          class="fill-none stroke-gray-200 stroke-[10]" />
+        <circle cx="56" cy="56" r="48" class="stroke-gray-200 stroke-[10] fill-none"/>
         <circle id="progress" cx="56" cy="56" r="48"
-          class="fill-none stroke-green-500 stroke-[10]"
-          stroke-dasharray="302"
-          stroke-dashoffset="0" />
+          class="stroke-green-500 stroke-[10] fill-none"
+          stroke-dasharray="302"/>
       </svg>
-
       <div id="count"
         class="absolute inset-0 flex items-center justify-center text-2xl font-semibold text-green-500">
         60
@@ -35,14 +28,10 @@
     </div>
 
     <div class="flex gap-3">
-      <button
-        onclick="respondYes()"
-        class="flex-1 h-10 rounded-xl bg-orange-500 text-white font-medium">
+      <button onclick="send('working')" class="flex-1 h-10 bg-orange-500 text-white rounded-xl">
         Working
       </button>
-      <button
-        onclick="respondNo()"
-        class="flex-1 h-10 rounded-xl bg-gray-100 text-gray-500 font-medium">
+      <button onclick="send('not-working')" class="flex-1 h-10 bg-gray-100 text-gray-500 rounded-xl">
         Not Working
       </button>
     </div>
@@ -51,31 +40,29 @@
   <script>
     const TOTAL = 60;
     const CIRC = 302;
-
     let sec = TOTAL;
+
     const count = document.getElementById("count");
     const progress = document.getElementById("progress");
 
     const timer = setInterval(() => {
       sec--;
       count.textContent = sec;
-      progress.style.strokeDashoffset =
-        CIRC - (sec / TOTAL) * CIRC;
+      progress.style.strokeDashoffset = CIRC - (sec / TOTAL) * CIRC;
 
       if (sec <= 0) {
         clearInterval(timer);
-        window.electronAPI.popupResponse("timeout");
+        send("timeout");
       }
     }, 1000);
 
-    function respondYes() {
+    function send(action) {
       clearInterval(timer);
-      window.electronAPI.popupResponse("yes");
-    }
-
-    function respondNo() {
-      clearInterval(timer);
-      window.electronAPI.popupResponse("timeout");
+      window.electronAPI.popupResponse({
+        type: "idle-check",
+        action
+      });
+      window.close();
     }
   </script>
 </body>

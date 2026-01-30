@@ -1,5 +1,83 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import api from "./api";
+
+/* ================= PROJECT DROPDOWN ================= */
+
+const ProjectDropdown = ({ projects, value, onChange }) => {
+  const [open, setOpen] = useState(false);
+  const ref = useRef(null);
+
+  const selected = projects.find(
+    (p) => p.id === Number(value)
+  );
+
+  // close on outside click
+  useEffect(() => {
+    const handler = (e) => {
+      if (ref.current && !ref.current.contains(e.target)) {
+        setOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, []);
+
+  return (
+    <div ref={ref} className="relative">
+      {/* Trigger */}
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        className="
+          px-3 py-2 min-w-[150px]
+          text-[13px] text-left
+          border border-gray-300 rounded-md
+          bg-white text-gray-800
+          flex items-center justify-between
+          whitespace-nowrap
+          focus:outline-none focus:border-[#FF7300]
+        "
+      >
+        <span className={selected ? "" : "text-gray-400"}>
+          {selected ? selected.title : "Select project"}
+        </span>
+        <span className="text-xs ml-2">▾</span>
+      </button>
+
+      {/* Dropdown Card */}
+      {open && (
+        <div
+          className="
+            absolute z-30 mt-2 min-w-full
+            bg-white rounded-xl
+            shadow-[0_12px_30px_rgba(0,0,0,0.15)]
+            border border-gray-100
+            overflow-hidden
+          "
+        >
+          {projects.map((p) => (
+            <div
+              key={p.id}
+              onClick={() => {
+                onChange(p.id);
+                setOpen(false);
+              }}
+              className="
+                px-4 py-2 text-sm cursor-pointer
+                hover:bg-[#F4F0FF]
+                transition
+              "
+            >
+              {p.title}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
+
+/* ================= ADD TASK ================= */
 
 const AddTask = ({ workLogId, onTaskAdded }) => {
   const [taskTitle, setTaskTitle] = useState("");
@@ -38,7 +116,6 @@ const AddTask = ({ workLogId, onTaskAdded }) => {
       return;
     }
 
-    // 🔹 TEMP TASK (for instant UI)
     const tempId = `temp-${Date.now()}`;
     const tempTask = {
       task_id: tempId,
@@ -51,7 +128,6 @@ const AddTask = ({ workLogId, onTaskAdded }) => {
       __temp: true,
     };
 
-    // 🚀 ADD TO UI IMMEDIATELY
     onTaskAdded?.(tempTask);
 
     try {
@@ -71,7 +147,6 @@ const AddTask = ({ workLogId, onTaskAdded }) => {
       const updatedTasks = res.data?.tasks || [];
       const realTask = updatedTasks.at(-1);
 
-      // 🔁 REPLACE TEMP TASK WITH REAL ONE
       if (realTask) {
         onTaskAdded?.(realTask, tempId);
       }
@@ -79,9 +154,7 @@ const AddTask = ({ workLogId, onTaskAdded }) => {
       setTaskTitle("");
       setProjectId("");
     } catch (err) {
-      // ❌ ROLLBACK TEMP TASK
       onTaskAdded?.(null, tempId);
-
       setError(
         err.response?.data?.message || "Failed to add task"
       );
@@ -93,7 +166,7 @@ const AddTask = ({ workLogId, onTaskAdded }) => {
   /* ================= UI ================= */
   return (
     <div className="w-full max-w-xl space-y-2">
-      <div className="flex flex-col gap-2 sm:flex-row">
+      <div className="flex items-center gap-2">
         {/* TASK INPUT */}
         <input
           type="text"
@@ -106,19 +179,12 @@ const AddTask = ({ workLogId, onTaskAdded }) => {
           className="flex-1 rounded-md border border-gray-300 px-3 py-2 text-sm outline-none"
         />
 
-        {/* PROJECT SELECT */}
-        <select
+        {/* PROJECT DROPDOWN */}
+        <ProjectDropdown
+          projects={projects}
           value={projectId}
-          onChange={(e) => setProjectId(e.target.value)}
-          className="rounded-md border border-gray-300 px-3 py-2 text-[13px] outline-none"
-        >
-          <option value="">Select project</option>
-          {projects.map((p) => (
-            <option key={p.id} value={p.id}>
-              {p.title}
-            </option>
-          ))}
-        </select>
+          onChange={setProjectId}
+        />
 
         {/* ADD BUTTON */}
         <button
@@ -131,14 +197,12 @@ const AddTask = ({ workLogId, onTaskAdded }) => {
         </button>
       </div>
 
-      {/* INFO */}
       {!workLogId && (
         <p className="text-xs text-gray-500">
           ⚠️ Today’s work log not found
         </p>
       )}
 
-      {/* ERROR */}
       {error && (
         <p className="text-xs text-red-600">{error}</p>
       )}

@@ -1,3 +1,253 @@
+// const {
+//   app,
+//   BrowserWindow,
+//   ipcMain,
+//   powerMonitor,
+//   screen
+// } = require("electron");
+// const path = require("path");
+
+// /* ===== SINGLE INSTANCE LOCK ===== */
+// const gotTheLock = app.requestSingleInstanceLock();
+// if (!gotTheLock) {
+//   app.quit();
+//   process.exit(0);
+// }
+
+// app.disableHardwareAcceleration();
+
+// /* ===== STATE ===== */
+// let mainWindow = null;
+
+// // popup-1 (green)
+// let popupWindow = null;
+
+// // popup-2 (red)
+// let idleCounterWindow = null;
+
+// let TASK_RUNNING = false;
+// let POPUP_OPEN = false;
+
+// const IDLE_LIMIT = 60; // system idle seconds
+// let LAST_POPUP_AT = 0;
+// const POPUP_COOLDOWN = 15000;
+// let IDLE_INTERVAL_STARTED = false;
+
+// /* ================= MAIN WINDOW ================= */
+
+// function createMainWindow() {
+//   mainWindow = new BrowserWindow({
+//     webPreferences: {
+//       preload: path.join(__dirname, "preload.cjs"),
+//       contextIsolation: true,
+//       nodeIntegration: false
+//     }
+//   });
+
+//   mainWindow.loadURL("http://localhost:5173");
+//   mainWindow.webContents.openDevTools({ mode: "detach" });
+// }
+
+
+// // function createMainWindow() {
+// //   mainWindow = new BrowserWindow({
+// //     width: 680,
+// //     height: 480,
+
+// //     // 🔒 HARD LOCK SIZE
+// //     resizable: false,
+// //     maximizable: false,
+// //     fullscreenable: false,
+
+// //     // 🧼 UI polish
+// //     autoHideMenuBar: true,
+// //     useContentSize: true,
+
+// //     webPreferences: {
+// //       preload: path.join(__dirname, "preload.cjs"),
+// //       contextIsolation: true,
+// //       nodeIntegration: false
+// //     }
+// //   });
+
+// //   // 🔒 ABSOLUTE SIZE LOCK (cannot be bypassed)
+// //   mainWindow.setMinimumSize(680, 480);
+// //   mainWindow.setMaximumSize(680, 480);
+
+// //   mainWindow.loadURL("http://localhost:5173");
+
+// //   // OPTIONAL: remove this in production
+// //   mainWindow.webContents.openDevTools({ mode: "detach" });
+// // }
+
+
+// /* ================= HELPERS ================= */
+
+// function centerWindow(win) {
+//   const cursor = screen.getCursorScreenPoint();
+//   const display = screen.getDisplayNearestPoint(cursor);
+//   const { x, y, width, height } = display.workArea;
+//   const bounds = win.getBounds();
+
+//   win.setPosition(
+//     Math.round(x + (width - bounds.width) / 2),
+//     Math.round(y + (height - bounds.height) / 2),
+//     false
+//   );
+// }
+
+// /* ================= POPUP 1 (GREEN) ================= */
+
+// function createIdleCheckPopup() {
+//   if (POPUP_OPEN) return;
+
+//   POPUP_OPEN = true;
+
+//   popupWindow = new BrowserWindow({
+//     width: 324,
+//     height: 269,
+//     frame: false,
+//     resizable: false,
+//     alwaysOnTop: true,
+//     skipTaskbar: true,
+//     transparent: true,
+//     show: false,
+//     webPreferences: {
+//       preload: path.join(__dirname, "preload.cjs"),
+//       contextIsolation: true,
+//       devTools: false
+//     }
+//   });
+
+//   popupWindow.loadFile(path.join(__dirname, "popup.html"));
+
+//   popupWindow.once("ready-to-show", () => {
+//     centerWindow(popupWindow);
+//     popupWindow.show();
+//   });
+
+//   popupWindow.on("closed", () => {
+//     popupWindow = null;
+//     POPUP_OPEN = false;
+//     LAST_POPUP_AT = Date.now();
+//   });
+// }
+
+// function closePopup1() {
+//   if (popupWindow && !popupWindow.isDestroyed()) {
+//     popupWindow.destroy();
+//   }
+//   popupWindow = null;
+//   POPUP_OPEN = false;
+//   LAST_POPUP_AT = Date.now();
+// }
+
+// /* ================= POPUP 2 (RED) ================= */
+
+// function openIdleCounterPopup() {
+//   if (idleCounterWindow) return;
+
+//   idleCounterWindow = new BrowserWindow({
+//     width: 324,
+//     height: 269,
+//     frame: false,
+//     resizable: false,
+//     alwaysOnTop: true,
+//     skipTaskbar: true,
+//     transparent: true,
+//     show: false,
+//     webPreferences: {
+//       preload: path.join(__dirname, "preload.cjs"),
+//       contextIsolation: true,
+//       devTools: false
+//     }
+//   });
+
+//   idleCounterWindow.loadFile(
+//     path.join(__dirname, "idle-check.html")
+//   );
+
+//   idleCounterWindow.once("ready-to-show", () => {
+//     centerWindow(idleCounterWindow);
+//     idleCounterWindow.show();
+//   });
+
+//   idleCounterWindow.on("closed", () => {
+//     idleCounterWindow = null;
+//   });
+
+//   // ⛔ stop running task officially
+//   TASK_RUNNING = false;
+//   mainWindow.webContents.send("force-stop-tasks");
+// }
+
+// /* ================= IPC ================= */
+
+// ipcMain.removeAllListeners("task-running");
+// ipcMain.on("task-running", (_, running) => {
+//   TASK_RUNNING = running;
+// });
+
+// ipcMain.removeAllListeners("popup-response");
+// ipcMain.on("popup-response", (_, res) => {
+//   console.log("🟢 Popup response:", res);
+
+//   // popup-1 → user confirmed working
+//   if (res === "yes") {
+//     closePopup1();
+//     return;
+//   }
+
+//   // popup-1 → countdown finished
+//   if (res === "timeout") {
+//     closePopup1();
+//     openIdleCounterPopup();
+//     return;
+//   }
+
+//   // popup-2 → user resumed work
+//   if (res?.result === "working") {
+//     TASK_RUNNING = true;
+
+//     if (idleCounterWindow && !idleCounterWindow.isDestroyed()) {
+//       idleCounterWindow.destroy();
+//       idleCounterWindow = null;
+//     }
+//   }
+// });
+
+// /* ================= IDLE MONITOR ================= */
+
+// app.whenReady().then(() => {
+//   createMainWindow();
+
+//   if (IDLE_INTERVAL_STARTED) return;
+//   IDLE_INTERVAL_STARTED = true;
+
+//   setInterval(() => {
+//     const idle = powerMonitor.getSystemIdleTime();
+
+//     console.log(
+//       `🕒 IDLE=${idle}s | TASK_RUNNING=${TASK_RUNNING} | POPUP_OPEN=${POPUP_OPEN}`
+//     );
+
+//     if (
+//       idle >= IDLE_LIMIT &&
+//       TASK_RUNNING &&
+//       !POPUP_OPEN &&
+//       Date.now() - LAST_POPUP_AT > POPUP_COOLDOWN
+//     ) {
+//       console.log("🔥 Opening idle popup");
+//       createIdleCheckPopup();
+//     }
+//   }, 5000);
+// });
+
+// app.on("window-all-closed", () => {
+//   if (process.platform !== "darwin") app.quit();
+// });
+
+
 const {
   app,
   BrowserWindow,
@@ -7,9 +257,8 @@ const {
 } = require("electron");
 const path = require("path");
 
-/* ===== SINGLE INSTANCE LOCK ===== */
-const gotTheLock = app.requestSingleInstanceLock();
-if (!gotTheLock) {
+/* ===== SINGLE INSTANCE ===== */
+if (!app.requestSingleInstanceLock()) {
   app.quit();
   process.exit(0);
 }
@@ -18,20 +267,15 @@ app.disableHardwareAcceleration();
 
 /* ===== STATE ===== */
 let mainWindow = null;
-
-// popup-1 (green)
-let popupWindow = null;
-
-// popup-2 (red)
-let idleCounterWindow = null;
+let popupWindow = null;        // popup-1 (green)
+let idleCounterWindow = null;  // popup-2 (red)
 
 let TASK_RUNNING = false;
 let POPUP_OPEN = false;
 
-const IDLE_LIMIT = 60; // system idle seconds
+const IDLE_LIMIT = 60; // seconds
 let LAST_POPUP_AT = 0;
 const POPUP_COOLDOWN = 15000;
-let IDLE_INTERVAL_STARTED = false;
 
 /* ================= MAIN WINDOW ================= */
 
@@ -39,47 +283,14 @@ function createMainWindow() {
   mainWindow = new BrowserWindow({
     webPreferences: {
       preload: path.join(__dirname, "preload.cjs"),
-      contextIsolation: true,
-      nodeIntegration: false
+      contextIsolation: true
     }
   });
 
   mainWindow.loadURL("http://localhost:5173");
   mainWindow.webContents.openDevTools({ mode: "detach" });
+
 }
-
-
-// function createMainWindow() {
-//   mainWindow = new BrowserWindow({
-//     width: 680,
-//     height: 480,
-
-//     // 🔒 HARD LOCK SIZE
-//     resizable: false,
-//     maximizable: false,
-//     fullscreenable: false,
-
-//     // 🧼 UI polish
-//     autoHideMenuBar: true,
-//     useContentSize: true,
-
-//     webPreferences: {
-//       preload: path.join(__dirname, "preload.cjs"),
-//       contextIsolation: true,
-//       nodeIntegration: false
-//     }
-//   });
-
-//   // 🔒 ABSOLUTE SIZE LOCK (cannot be bypassed)
-//   mainWindow.setMinimumSize(680, 480);
-//   mainWindow.setMaximumSize(680, 480);
-
-//   mainWindow.loadURL("http://localhost:5173");
-
-//   // OPTIONAL: remove this in production
-//   mainWindow.webContents.openDevTools({ mode: "detach" });
-// }
-
 
 /* ================= HELPERS ================= */
 
@@ -91,35 +302,32 @@ function centerWindow(win) {
 
   win.setPosition(
     Math.round(x + (width - bounds.width) / 2),
-    Math.round(y + (height - bounds.height) / 2),
-    false
+    Math.round(y + (height - bounds.height) / 2)
   );
 }
 
 /* ================= POPUP 1 (GREEN) ================= */
 
-function createIdleCheckPopup() {
+function openIdleCheckPopup() {
   if (POPUP_OPEN) return;
 
   POPUP_OPEN = true;
 
   popupWindow = new BrowserWindow({
-    width: 324,
-    height: 269,
+    width: 340,
+    height: 270,
     frame: false,
-    resizable: false,
+    transparent: true,
     alwaysOnTop: true,
     skipTaskbar: true,
-    transparent: true,
-    show: false,
+    resizable: false,
     webPreferences: {
       preload: path.join(__dirname, "preload.cjs"),
-      contextIsolation: true,
-      devTools: false
+      contextIsolation: true
     }
   });
 
-  popupWindow.loadFile(path.join(__dirname, "popup.html"));
+  popupWindow.loadFile("popup.html");
 
   popupWindow.once("ready-to-show", () => {
     centerWindow(popupWindow);
@@ -148,24 +356,20 @@ function openIdleCounterPopup() {
   if (idleCounterWindow) return;
 
   idleCounterWindow = new BrowserWindow({
-    width: 324,
-    height: 269,
+    width: 340,
+    height: 270,
     frame: false,
-    resizable: false,
+    transparent: true,
     alwaysOnTop: true,
     skipTaskbar: true,
-    transparent: true,
-    show: false,
+    resizable: false,
     webPreferences: {
       preload: path.join(__dirname, "preload.cjs"),
-      contextIsolation: true,
-      devTools: false
+      contextIsolation: true
     }
   });
 
-  idleCounterWindow.loadFile(
-    path.join(__dirname, "idle-check.html")
-  );
+  idleCounterWindow.loadFile("idle-check.html");
 
   idleCounterWindow.once("ready-to-show", () => {
     centerWindow(idleCounterWindow);
@@ -176,38 +380,39 @@ function openIdleCounterPopup() {
     idleCounterWindow = null;
   });
 
-  // ⛔ stop running task officially
+  // ⛔ stop tasks
   TASK_RUNNING = false;
   mainWindow.webContents.send("force-stop-tasks");
 }
 
 /* ================= IPC ================= */
 
-ipcMain.removeAllListeners("task-running");
 ipcMain.on("task-running", (_, running) => {
   TASK_RUNNING = running;
 });
 
-ipcMain.removeAllListeners("popup-response");
-ipcMain.on("popup-response", (_, res) => {
-  console.log("🟢 Popup response:", res);
+ipcMain.on("popup-response", (_, payload) => {
+  const { type, action } = payload;
 
-  // popup-1 → user confirmed working
-  if (res === "yes") {
-    closePopup1();
-    return;
-  }
+  // popup-1
+  if (type === "idle-check") {
+    if (action === "working") {
+      closePopup1();
+      return;
+    }
 
-  // popup-1 → countdown finished
-  if (res === "timeout") {
+    // timeout or not-working
     closePopup1();
     openIdleCounterPopup();
     return;
   }
 
-  // popup-2 → user resumed work
-  if (res?.result === "working") {
-    TASK_RUNNING = true;
+  // popup-2
+  if (type === "idle-counter") {
+    if (action === "working") {
+      TASK_RUNNING = true;
+      mainWindow.webContents.send("resume-tasks");
+    }
 
     if (idleCounterWindow && !idleCounterWindow.isDestroyed()) {
       idleCounterWindow.destroy();
@@ -221,15 +426,8 @@ ipcMain.on("popup-response", (_, res) => {
 app.whenReady().then(() => {
   createMainWindow();
 
-  if (IDLE_INTERVAL_STARTED) return;
-  IDLE_INTERVAL_STARTED = true;
-
   setInterval(() => {
     const idle = powerMonitor.getSystemIdleTime();
-
-    console.log(
-      `🕒 IDLE=${idle}s | TASK_RUNNING=${TASK_RUNNING} | POPUP_OPEN=${POPUP_OPEN}`
-    );
 
     if (
       idle >= IDLE_LIMIT &&
@@ -237,8 +435,7 @@ app.whenReady().then(() => {
       !POPUP_OPEN &&
       Date.now() - LAST_POPUP_AT > POPUP_COOLDOWN
     ) {
-      console.log("🔥 Opening idle popup");
-      createIdleCheckPopup();
+      openIdleCheckPopup();
     }
   }, 5000);
 });

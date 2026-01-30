@@ -4,7 +4,6 @@ import AddTask from "./addTask";
 import Sidebar from "./Sidebar";
 import { logout } from "./auth";
 
-
 /* ================= HELPERS ================= */
 
 const formatHMS = (seconds = 0) => {
@@ -86,6 +85,7 @@ export default function AttendanceApp() {
       if (!isLunchBreak()) return;
 
       const hasRunning = todayLog?.tasks?.some(t => t.is_running);
+
       if (!hasRunning) return;
 
       try {
@@ -123,6 +123,8 @@ export default function AttendanceApp() {
 
   if (!todayLog) return null;
 
+const isCheckedIn = Boolean(todayLog?.id);
+
   /* ===== FILTERS (FIXED) ===== */
 
   const today = todayDate();
@@ -146,12 +148,12 @@ export default function AttendanceApp() {
 
   /* ===== RUNNING TASK ===== */
   const runningTask = todayTasks.find((t) => t.is_running);
+
   const runningSeconds = runningTask ? getLiveSeconds(runningTask) : 0;
 
   const totalTodaySeconds = (todayLog.tasks || [])
     .filter((t) => t.createdAt?.slice(0, 10) === today)
     .reduce((sum, t) => sum + getLiveSeconds(t), 0);
-
 
   /* ===== ACTIONS (FIXED UI UPDATE) ===== */
 
@@ -319,7 +321,7 @@ export default function AttendanceApp() {
           >
             <div>
               <div className="text-xs text-gray-300">Task</div>
-              <div className="text-lg font-semibold">
+              <div className="text-sm">
                 {runningTask?.task_title || "No task running"}
               </div>
             </div>
@@ -365,17 +367,17 @@ export default function AttendanceApp() {
 
               {/* NAME + LOGOUT */}
               <div>
-                <div className="text-sm font-semibold">
+                <div className="text-sm font-medium">
                   {displayUser?.name || displayUser?.username ||
                     "Employee"}
                 </div>
-                <div onClick={handleLogout} className="text-[13px] text-gray-400 cursor-pointer hover:underline">
+                <div onClick={handleLogout} className="text-xs text-gray-400 cursor-pointer hover:underline">
                   Logout
                 </div>
               </div>
             </div>
 
-            <div className="text-sm">
+            <div className="text-[13px]">
               Worked Today:{" "}
               <span className="font-semibold">
                 {formatHMS(totalTodaySeconds)}
@@ -394,7 +396,7 @@ export default function AttendanceApp() {
             <div style={{ width: 515 }} className="flex-1 overflow-hidden pt-2 bg-white rounded-xl shadow-sm">
 
               {/* ADD TASK */}
-              {activeTab === "today" && (
+              {activeTab === "today" && isCheckedIn && (
                 <div className="mb-3 px-3" style={{ width: 491, height: 36 }}>
                   <AddTask
                     workLogId={todayLog.id}
@@ -429,140 +431,154 @@ export default function AttendanceApp() {
               )}
 
               {/* ORANGE DIVIDER */}
-              <div className="w-[490] h-px bg-[#FF7300] mb-2" />
-
+              {isCheckedIn && (
+                <div className="w-[490] h-px bg-[#FF7300] mb-2" />
+              )}
               {/* TABLE */}
               <div className="overflow-auto py-2 mx-3 no-scrollbar" style={{ height: 260 }}>
-                <table className="w-full bg-white rounded-xl text-sm">
-                  <thead className="bg-gray-50">
-                    <tr className="rounded-xl bg-[#F7F7F7]">
-                      {/* Done */}
-                      <th className="p-2"></th>
 
-                      {/* Task (ALWAYS visible) */}
-                      <th className="p-2 text-left text-md font-normal">Task</th>
+                {!isCheckedIn ? (
+                  <div className="flex flex-col items-center justify-center h-full text-center">
+                    <div className="text-lg font-semibold text-gray-800">
+                      You have not checked in today
+                    </div>
+                    <div className="text-sm text-gray-500 mt-2">
+                      Please check in to start tracking your tasks and time
+                    </div>
+                  </div>
+                ) : (
 
-                      {/* Completed-only columns */}
-                      {activeTab === "completed" && (
-                        <th className="p-2 text-md font-normal">Project</th>
-                      )}
+                  <table className="w-full bg-white rounded-xl text-sm">
+                    <thead className="bg-gray-50">
+                      <tr className="rounded-xl bg-[#F7F7F7]">
+                        {/* Done */}
+                        <th className="p-2 w-10"></th>
 
-                      {activeTab === "completed" && (
-                        <th className="p-2 text-md font-normal">Status</th>
-                      )}
+                        {/* Task (ALWAYS visible) */}
+                        <th className="p-2 text-left text-md font-normal">Task</th>
 
-                      {/* Time (ALWAYS visible) */}
-                      <th className="p-2 text-md text-left font-normal">Time</th>
-
-                      {/* Action (TODAY only) */}
-                      {activeTab !== "completed" && (
-                        <th className="p-2 text-md font-normal">Action</th>
-                      )}
-                    </tr>
-
-                  </thead>
-
-                  <tbody>
-                    {visibleTasks.map((task) => (
-                      <tr
-                        key={`${task.task_id}-${task.createdAt}`}
-                        className="border-b h-12"
-                      >
-                        <td className="p-2">
-                          <div className="flex items-center justify-center h-full">
-                            {task.status === "completed" ? (
-                              // ✅ Completed (green)
-                              <div className="w-4 h-4 bg-green-500 rounded flex items-center justify-center">
-                                <span className="text-white text-[10px] font-bold leading-none">
-                                  ✓
-                                </span>
-                              </div>
-                            ) : (
-                              // ⬜ In-progress (custom empty box)
-                              <button
-                                disabled={task.task_key === "DAILY_MEETING"}
-                                onClick={() => completeTask(task)}
-                                className={`w-4 h-4 border-2 rounded-sm flex items-center justify-center
-    ${task.task_key === "DAILY_MEETING"
-                                    ? "border-gray-300 cursor-not-allowed opacity-40"
-                                    : "border-gray-500 cursor-pointer"
-                                  }`}
-                                aria-label="Complete task"
-                              />
-
-                            )}
-                          </div>
-                        </td>
-
-
-
-                        <td
-                          className={`p-2 text-sm ${task.is_running ? "text-green-500" : "text-gray-800"
-                            }`}
-                        >
-                          {task.task_title}
-                        </td>
+                        {/* Completed-only columns */}
                         {activeTab === "completed" && (
-                          <td className="p-2 text-sm">
-                            {task.project?.title || "—"}
-                          </td>
+                          <th className="p-2 text-md font-normal">Project</th>
                         )}
 
                         {activeTab === "completed" && (
+                          <th className="p-2 text-md font-normal">Status</th>
+                        )}
+
+                        {/* Time (ALWAYS visible) */}
+                        <th className="p-2 text-md text-left font-normal">Time</th>
+
+                        {/* Action (TODAY only) */}
+                        {activeTab !== "completed" && (
+                          <th className="p-2 text-md font-normal">Action</th>
+                        )}
+                      </tr>
+
+                    </thead>
+
+                    <tbody className="text-sm">
+                      {visibleTasks.map((task) => (
+                        <tr
+                          key={`${task.task_id}-${task.createdAt}`}
+                          className="border-b h-12"
+                        >
                           <td className="p-2">
-                            <span
-                              className={`inline-flex items-center justify-center
+                            <div className="flex items-center justify-center h-full">
+                              {task.status === "completed" ? (
+                                // ✅ Completed (green)
+                                <div className="w-4 h-4 bg-green-500 rounded flex items-center justify-center">
+                                  <span className="text-white text-[10px] font-bold leading-none">
+                                    ✓
+                                  </span>
+                                </div>
+                              ) : (
+                                // ⬜ In-progress (custom empty box)
+                                <button
+                                  disabled={task.task_key === "DAILY_MEETING"}
+                                  onClick={() => completeTask(task)}
+                                  className={`w-4 h-4 border-2 rounded-sm flex items-center justify-center
+    ${task.task_key === "DAILY_MEETING"
+                                      ? "border-gray-300 cursor-not-allowed opacity-40"
+                                      : "border-gray-500 cursor-pointer"
+                                    }`}
+                                  aria-label="Complete task"
+                                />
+
+                              )}
+                            </div>
+                          </td>
+
+
+
+                          <td
+                            className={`p-2 text-sm ${task.is_running ? "text-green-500" : "text-gray-800"
+                              }`}
+                          >
+                            {task.task_title}
+                          </td>
+                          {activeTab === "completed" && (
+                            <td className="p-2 text-13px[]">
+                              {task.project?.title || "—"}
+                            </td>
+                          )}
+
+                          {activeTab === "completed" && (
+                            <td className="p-2">
+                              <span
+                                className={`inline-flex items-center justify-center
         px-2 py-1 pb-2 rounded-lg text-[12px]
         whitespace-nowrap leading-none
         ${task.status === "completed"
-                                  ? "bg-green-100 text-green-600"
-                                  : "bg-orange-100 text-orange-600"
-                                }`}
-                            >
-                              {task.status}
-                            </span>
-                          </td>
-                        )}
-
-
-                        <td className="p-2 font-mono">
-                          <span
-                            className={`inline-block px-2 py-1 rounded-md text-sm ${task.is_running
-                                ? "bg-green-100 text-green-500"
-                                : "bg-transparent text-gray-800"
-                              }`}
-                          >
-                            {formatHMS(getLiveSeconds(task))}
-                          </span>
-                        </td>
-
-
-                        {activeTab !== "completed" && (
-                          <td className="p-2 text-center">
-                            {task.is_running ? (
-                              <button
-                                onClick={stopTask}
-                                className="w-6 h-6 rounded-full bg-[#FF7300] text-white"
-                              >
-                                ❚❚
-                              </button>
-                            ) : (
-                              <button
-                                onClick={() => startTask(task)}
-                                disabled={isLunchBreak()}
-                                className={`w-7 h-7 rounded-full ${isLunchBreak() ? "opacity-40 cursor-not-allowed" : ""
+                                    ? "bg-green-100 text-green-600"
+                                    : "bg-orange-100 text-orange-600"
                                   }`}
                               >
-                                ▶
-                              </button>
-                            )}
-                          </td>
-                        )}
+                                {task.status}
+                              </span>
+                            </td>
+                          )}
 
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+
+                          <td className="p-2 font-mono">
+                            <span
+                              className={`inline-block px-2 py-1 rounded-md text-sm ${task.is_running
+                                ? "bg-green-100 text-green-500"
+                                : "bg-transparent text-gray-800"
+                                }`}
+                            >
+                              {formatHMS(getLiveSeconds(task))}
+                            </span>
+                          </td>
+
+
+                          {activeTab !== "completed" && (
+                            <td className="p-2 text-center">
+                              {task.is_running ? (
+                                <button
+                                  onClick={stopTask}
+                                  className="w-6 h-6 rounded-full bg-[#FF7300] text-white"
+                                >
+                                  ❚❚
+                                </button>
+                              ) : (
+                                <button
+                                  onClick={() => startTask(task)}
+                                  disabled={isLunchBreak()}
+                                  className={`w-6 h-6 text-gray-50 bg-[#797571] rounded-full ${isLunchBreak() ? "opacity-40 cursor-not-allowed" : ""
+                                    }`}
+                                >
+                                  ▶
+                                </button>
+                              )}
+                            </td>
+                          )}
+
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
               </div>
 
             </div>

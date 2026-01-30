@@ -14,28 +14,30 @@ export default function Sidebar({
         </div>
 
         {/* TODAY */}
-        <button
-          onClick={() => setActiveFilter("today")}
-          className={`w-full text-left px-3 py-2 rounded-lg text-sm mb-2 ${
-            activeFilter === "today"
-              ? "bg-purple-100 text-purple-700"
-              : "text-gray-700"
-          }`}
-        >
-          Today
-        </button>
+        {/* TODAY */}
+<button
+  onClick={() => setActiveFilter("today")}
+  className={`w-full text-left px-3 py-2 rounded-lg text-sm font-medium mb-2 ${
+    activeFilter === "today"
+      ? "bg-purple-100 text-purple-700"
+      : "text-gray-700"
+  }`}
+>
+  Today
+</button>
 
-        {/* COMPLETE */}
-        <button
-          onClick={() => setActiveFilter("completed")}
-          className={`w-full text-left px-3 py-2 rounded-lg text-sm ${
-            activeFilter === "completed"
-              ? "bg-green-100 text-green-700"
-              : "text-gray-700"
-          }`}
-        >
-          Completed
-        </button>
+{/* COMPLETED */}
+<button
+  onClick={() => setActiveFilter("completed")}
+  className={`w-full px-1 py-2 rounded-lg text-sm font-medium ${
+    activeFilter === "completed"
+      ? "bg-green-100 text-green-700"
+      : "text-gray-700"
+  }`}
+>
+  Completed
+</button>
+
       </div>
     </div>
   );
