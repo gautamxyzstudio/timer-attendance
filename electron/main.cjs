@@ -6,12 +6,18 @@ const {
   screen
 } = require("electron");
 
-if (process.platform === "win32") {
-  app.setAppUserModelId("com.xyz.tasktracker"); 
-}
 const path = require("path");
 
-/* ===== SINGLE INSTANCE ===== */
+/* ================= APP NAME & WINDOWS ID ================= */
+
+app.setName("Time Tracker");
+
+if (process.platform === "win32") {
+  app.setAppUserModelId("com.xyz.timetracker");
+}
+
+/* ================= SINGLE INSTANCE ================= */
+
 if (!app.requestSingleInstanceLock()) {
   app.quit();
   process.exit(0);
@@ -19,18 +25,22 @@ if (!app.requestSingleInstanceLock()) {
 
 app.disableHardwareAcceleration();
 
-/* ===== STATE ===== */
+/* ================= ENV ================= */
+
+const isDev = !app.isPackaged;
+
+/* ================= STATE ================= */
+
 let mainWindow = null;
-let popupWindow = null;        // popup-1 (green)
-let idleCounterWindow = null;  // popup-2 (red)
+let popupWindow = null;
+let idleCounterWindow = null;
 
 let TASK_RUNNING = false;
 let POPUP_OPEN = false;
 let CURRENT_WORKLOG_ID = null;
 
-
-const IDLE_LIMIT = 300;        // system idle seconds
-const POPUP1_TIMEOUT = 60_000; // popup-1 auto timeout (60s)
+const IDLE_LIMIT = 30;
+const POPUP1_TIMEOUT = 60_000;
 const POPUP_COOLDOWN = 15_000;
 
 let LAST_POPUP_AT = 0;
@@ -38,48 +48,48 @@ let POPUP1_TIMER = null;
 
 /* ================= MAIN WINDOW ================= */
 
- 
 function createMainWindow() {
   mainWindow = new BrowserWindow({
     width: 710,
     height: 530,
-    resizable: false,     
-    maximizable: false,     
+    resizable: false,
+    maximizable: false,
     fullscreenable: false,
-    autoHideMenuBar: true, 
-     icon: path.join(__dirname, "public/logo.ico"),
+    autoHideMenuBar: true,
+    title: "Time Tracker",
+
+    icon: path.join(__dirname, "../assets/icons/icon.png"),
+
     webPreferences: {
       preload: path.join(__dirname, "preload.cjs"),
       contextIsolation: true
     }
   });
- 
-  // 🔐 hard lock size (extra safety)
+
   mainWindow.setMinimumSize(710, 530);
   mainWindow.setMaximumSize(710, 530);
- 
-  mainWindow.loadURL("http://localhost:5173");
- 
-  // optional – remove if you don’t want devtools
-  mainWindow.webContents.openDevTools({ mode: "detach" });
 
-mainWindow.on("close", (e) => {
-  if (!TASK_RUNNING) return;
+  if (isDev) {
+    mainWindow.loadURL("http://localhost:5173");
+    mainWindow.webContents.openDevTools({ mode: "detach" });
+  } else {
+    mainWindow.loadFile(path.join(__dirname, "../dist/index.html"));
+  }
 
-  e.preventDefault(); // stop immediate exit
+  mainWindow.on("close", (e) => {
+    if (!TASK_RUNNING) return;
 
-  console.log("🛑 App closing → asking renderer to stop tasks");
+    e.preventDefault();
 
-  mainWindow.webContents.send("force-stop-tasks");
+    console.log("🛑 App closing → asking renderer to stop tasks");
+    mainWindow.webContents.send("force-stop-tasks");
 
-  // ⏱ give renderer time to finish API call
-  setTimeout(() => {
-    TASK_RUNNING = false;
-    mainWindow.destroy();
-    app.quit();
-  }, 1200); // 
-});
-
+    setTimeout(() => {
+      TASK_RUNNING = false;
+      mainWindow.destroy();
+      app.quit();
+    }, 1200);
+  });
 }
 
 /* ================= HELPERS ================= */
@@ -96,7 +106,7 @@ function centerWindow(win) {
   );
 }
 
-/* ================= POPUP 1 (GREEN) ================= */
+/* ================= POPUP 1 (IDLE CHECK) ================= */
 
 function openIdleCheckPopup() {
   if (POPUP_OPEN) return;
@@ -111,36 +121,31 @@ function openIdleCheckPopup() {
     alwaysOnTop: true,
     skipTaskbar: true,
     resizable: false,
+
+    icon: path.join(__dirname, "../assets/icons/icon.png"),
+
     webPreferences: {
       preload: path.join(__dirname, "preload.cjs"),
       contextIsolation: true
     }
   });
 
-  popupWindow.loadFile("popup.html");
+  popupWindow.loadFile(path.join(__dirname, "popup.html"));
 
   popupWindow.once("ready-to-show", () => {
     centerWindow(popupWindow);
     popupWindow.show();
   });
 
-  // ⏱️ AUTO TIMEOUT → CASE 3
-POPUP1_TIMER = setTimeout(() => {
-  if (!POPUP_OPEN) return;
+  POPUP1_TIMER = setTimeout(() => {
+    if (!POPUP_OPEN) return;
 
-  console.log("⏱️ Popup-1 timeout → FORCE stop tasks + open popup-2");
+    TASK_RUNNING = false;
+    mainWindow.webContents.send("force-stop-tasks");
 
-  // 🔴 CRITICAL: STOP TASKS FIRST
-  TASK_RUNNING = false;
-  mainWindow.webContents.send("force-stop-tasks");
-
-  // close popup-1 (no cooldown reset)
-  closePopup1(false);
-
-  // open popup-2 (idle counter)
-  openIdleCounterPopup();
-}, POPUP1_TIMEOUT);
-
+    closePopup1(false);
+    openIdleCounterPopup();
+  }, POPUP1_TIMEOUT);
 
   popupWindow.on("closed", () => {
     clearTimeout(POPUP1_TIMER);
@@ -158,16 +163,13 @@ function closePopup1(resetCooldown = true) {
 
   clearTimeout(POPUP1_TIMER);
   POPUP1_TIMER = null;
-
   popupWindow = null;
   POPUP_OPEN = false;
 
-  if (resetCooldown) {
-    LAST_POPUP_AT = Date.now();
-  }
+  if (resetCooldown) LAST_POPUP_AT = Date.now();
 }
 
-/* ================= POPUP 2 (RED) ================= */
+/* ================= POPUP 2 (IDLE COUNTER) ================= */
 
 function openIdleCounterPopup() {
   if (idleCounterWindow) return;
@@ -180,13 +182,16 @@ function openIdleCounterPopup() {
     alwaysOnTop: true,
     skipTaskbar: true,
     resizable: false,
+
+    icon: path.join(__dirname, "../assets/icons/icon.png"),
+
     webPreferences: {
       preload: path.join(__dirname, "preload.cjs"),
       contextIsolation: true
     }
   });
 
-  idleCounterWindow.loadFile("idle-check.html");
+  idleCounterWindow.loadFile(path.join(__dirname, "idle-check.html"));
 
   idleCounterWindow.once("ready-to-show", () => {
     centerWindow(idleCounterWindow);
@@ -198,7 +203,6 @@ function openIdleCounterPopup() {
     LAST_POPUP_AT = Date.now();
   });
 
-  // 🔴 FORCE STOP TASKS
   TASK_RUNNING = false;
   mainWindow.webContents.send("force-stop-tasks");
 }
@@ -207,30 +211,20 @@ function openIdleCounterPopup() {
 
 ipcMain.on("task-running", (_, running) => {
   TASK_RUNNING = Boolean(running);
-  console.log("📡 TASK_RUNNING =", TASK_RUNNING);
 });
 
 ipcMain.on("popup-response", (_, payload) => {
   const { type, action } = payload;
 
-  console.log("🟢 Popup response:", payload);
-
-  // 🟢 POPUP-1
   if (type === "idle-check") {
     closePopup1();
 
-    // ✅ Case 1
-    if (action === "working") return;
-
-    // ❌ Case 2 (manual not working)
     if (action === "not-working") {
       TASK_RUNNING = false;
       mainWindow.webContents.send("force-stop-tasks");
-      return;
     }
   }
 
-  // 🔴 POPUP-2
   if (type === "idle-counter") {
     if (action === "working") {
       TASK_RUNNING = true;
@@ -248,7 +242,6 @@ ipcMain.on("popup-response", (_, payload) => {
 
 ipcMain.on("set-worklog-id", (_, id) => {
   CURRENT_WORKLOG_ID = id;
-  console.log("📥 WorkLog ID stored:", id);
 });
 
 /* ================= IDLE MONITOR ================= */
@@ -258,10 +251,6 @@ app.whenReady().then(() => {
 
   setInterval(() => {
     const idle = powerMonitor.getSystemIdleTime();
-
-    console.log(
-      `🕒 IDLE=${idle}s | TASK_RUNNING=${TASK_RUNNING} | POPUP_OPEN=${POPUP_OPEN}`
-    );
 
     if (
       idle >= IDLE_LIMIT &&

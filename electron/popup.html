@@ -11,6 +11,7 @@
       margin: 0;
       padding: 0;
       overflow: hidden;
+      background: transparent;
     }
     ::-webkit-scrollbar {
       display: none;
@@ -19,37 +20,57 @@
 </head>
 
 <body class="bg-transparent flex items-center justify-center">
-  <div class="w-[340] h-[280] bg-white rounded-2xl px-5 py-2 flex flex-col gap-2 justify-between">
+  <div class="w-[340px] h-[280px] bg-white rounded-2xl border border-gray-200 shadow-lg px-5 py-4 flex flex-col justify-between">
+
+    <!-- HEADER -->
     <div>
-      <h3 class="text-base font-semibold">
+      <h3 class="text-base font-semibold text-gray-900">
         Hi. It seems kind of quiet, are you still working?
       </h3>
-      <p class="text-sm text-gray-500">
+      <p class="text-xs text-gray-500 mt-1">
         Clicking or typing anywhere means you’re working
       </p>
     </div>
 
-    <div class="relative w-25 h-25 mx-auto">
-      <svg class="w-28 h-28 -rotate-90">
-        <circle cx="56" cy="56" r="48"
-          class="stroke-gray-200 stroke-[10] fill-none" />
-        <circle id="progress" cx="56" cy="56" r="48"
+    <!-- TIMER -->
+    <div class="relative w-28 h-28 mx-auto">
+      <svg class="w-28 h-28 -rotate-90" viewBox="0 0 120 120">
+        <circle
+          cx="60"
+          cy="60"
+          r="52"
+          class="stroke-gray-200 stroke-[10] fill-none"
+        />
+        <circle
+          id="progress"
+          cx="60"
+          cy="60"
+          r="52"
           class="stroke-green-500 stroke-[10] fill-none"
-          stroke-dasharray="302" />
+          stroke-linecap="round"
+          stroke-dasharray="327"
+          stroke-dashoffset="0"
+        />
       </svg>
-      <div id="count"
-        class="absolute inset-0 flex items-center justify-center text-2xl font-semibold text-green-500">
-        relocation...
+
+      <div
+        id="count"
+        class="absolute inset-0 flex items-center justify-center text-xl font-semibold text-green-600">
+        60
       </div>
     </div>
 
+    <!-- ACTIONS -->
     <div class="flex gap-3">
-      <button onclick="send('working')"
-        class="flex-1 h-8 bg-orange-500 text-white rounded-xl">
+      <button
+        onclick="send('working')"
+        class="flex-1 h-9 bg-orange-500 hover:bg-orange-600 text-white rounded-xl text-sm font-medium">
         Working
       </button>
-      <button onclick="send('not-working')"
-        class="flex-1 h-8 bg-gray-100 text-gray-600 rounded-xl">
+
+      <button
+        onclick="send('not-working')"
+        class="flex-1 h-9 bg-gray-100 hover:bg-gray-200 text-gray-600 rounded-xl text-sm font-medium">
         Not Working
       </button>
     </div>
@@ -57,18 +78,24 @@
 
   <script>
     const TOTAL = 60;
-    const CIRC = 302;
+    const RADIUS = 52;
+    const CIRC = 2 * Math.PI * RADIUS;
+
     let sec = TOTAL;
 
     const count = document.getElementById("count");
     const progress = document.getElementById("progress");
 
+    progress.style.strokeDasharray = CIRC;
+    progress.style.strokeDashoffset = 0;
     count.textContent = sec;
 
     const timer = setInterval(() => {
       sec--;
       count.textContent = sec;
-      progress.style.strokeDashoffset = CIRC - (sec / TOTAL) * CIRC;
+
+      progress.style.strokeDashoffset =
+        CIRC - (sec / TOTAL) * CIRC;
 
       if (sec <= 0) {
         clearInterval(timer);

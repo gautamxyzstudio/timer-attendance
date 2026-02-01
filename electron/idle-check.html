@@ -19,37 +19,48 @@
 </head>
 
 <body class="bg-transparent flex items-center justify-center">
-  <div class="w-[340] h-[280] bg-white rounded-2xl px-5 py-2 flex gap-2 flex-col justify-between">
+  <div class="w-[340px] h-[280px] bg-white rounded-2xl border border-gray-200 shadow-lg px-5 py-4 flex flex-col justify-between">
+
+    <!-- TEXT -->
     <div>
-      <h3 class="text-base font-semibold">
+      <h3 class="text-base font-semibold text-gray-900">
         Hi. It seems kind of quiet, are you still working?
       </h3>
-      <p class="text-sm text-gray-500">
+      <p class="text-xs text-gray-500 mt-1">
         Clicking or typing anywhere means you’re working
       </p>
     </div>
 
-    <div class="relative w-25 h-25 mx-auto">
-      <svg class="w-28 h-28 -rotate-90">
-        <circle cx="56" cy="56" r="48"
-          class="stroke-red-200 stroke-[10] fill-none" />
-        <circle cx="56" cy="56" r="48"
-          class="stroke-red-500 stroke-[10] fill-none" />
+    <!-- TIMER -->
+    <div class="relative w-28 h-28 mx-auto">
+      <svg class="w-28 h-28 -rotate-90" viewBox="0 0 120 120">
+        <circle
+          cx="60" cy="60" r="52"
+          class="stroke-red-200 stroke-[10] fill-none"
+        />
+        <circle
+          cx="60" cy="60" r="52"
+          class="stroke-red-500 stroke-[10] fill-none"
+          stroke-linecap="round"
+        />
       </svg>
 
-      <div id="time"
-        class="absolute inset-0 flex items-center justify-center text-xl font-semibold text-red-500">
+      <div
+        id="time"
+        class="absolute inset-0 flex items-center justify-center text-lg font-semibold text-red-500">
         00:00:00
       </div>
     </div>
 
+    <!-- BUTTONS -->
     <div class="flex gap-3">
       <button onclick="working()"
-        class="flex-1 h-8 bg-orange-500 text-white rounded-xl">
+        class="flex-1 h-9 bg-orange-500 text-white rounded-xl text-sm font-medium hover:bg-orange-600">
         Working
       </button>
+
       <button onclick="notWorking()"
-        class="flex-1 h-8 bg-gray-100 text-gray-600 rounded-xl">
+        class="flex-1 h-9 bg-gray-100 text-gray-600 rounded-xl text-sm font-medium hover:bg-gray-200">
         Not Working
       </button>
     </div>
