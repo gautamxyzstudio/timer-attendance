@@ -1,5 +1,17 @@
 const { contextBridge, ipcRenderer } = require("electron");
 
+// ⛔ Prevent Electron from showing "Internal Server Error" dialogs
+window.addEventListener("unhandledrejection", (event) => {
+  event.preventDefault();
+  console.error("Unhandled promise rejection:", event.reason);
+});
+
+window.addEventListener("error", (event) => {
+  event.preventDefault();
+  console.error("Renderer error:", event.error || event.message);
+});
+
+
 contextBridge.exposeInMainWorld("electronAPI", {
   /* ================= STATE SYNC ================= */
     setWorkLogId: (id) =>

@@ -1,14 +1,23 @@
 import api from "./api";
 
 export const login = async (email, password) => {
-  const res = await api.post("/auth/local", {
-    identifier: email,
-    password
-  });
+  try {
+    const res = await api.post("/auth/local", {
+      identifier: email,
+      password,
+    });
 
-  localStorage.setItem("jwt", res.data.jwt);
-  localStorage.setItem("user", JSON.stringify(res.data.user));
-  return res.data.user;
+    localStorage.setItem("jwt", res.data.jwt);
+    localStorage.setItem("user", JSON.stringify(res.data.user));
+    return res.data.user;
+  } catch (err) {
+  const message =
+    err?.response?.data?.error?.message ||
+    "Invalid email or password";
+
+  throw new Error(message);
+}
+
 };
 
 export const getUser = () =>
