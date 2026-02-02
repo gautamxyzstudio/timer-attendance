@@ -2,18 +2,22 @@
   "name": "time-tracker",
   "productName": "Time Tracker",
   "private": true,
-  "version": "0.0.0",
+  "version": "1.0.0",
   "type": "module",
   "main": "electron/main.cjs",
 
   "scripts": {
     "dev": "vite",
-    "build": "vite build",
-    "lint": "eslint .",
     "preview": "vite preview",
+
     "electron": "electron electron/main.cjs",
     "start": "concurrently \"vite\" \"wait-on http://localhost:5173 && electron electron/main.cjs\"",
-    "dist": "electron-builder"
+
+    "build:web": "vite build",
+    "build:app": "npm run build:web && electron-builder",
+
+    "build:mac": "npm run build:web && electron-builder --mac",
+    "build:win": "npm run build:web && electron-builder --win"
   },
 
   "dependencies": {
@@ -40,35 +44,44 @@
   },
 
   "build": {
-    "appId": "com.xyz.timetracker",
-    "productName": "Time Tracker",
+  "appId": "com.xyz.timetracker",
+  "productName": "Time Tracker",
 
-    "directories": {
-      "buildResources": "assets",
-      "output": "release"
-    },
+  "asar": true,
 
-    "files": [
-      "dist/**",
-      "electron/**",
-      "assets/**",
-      "package.json"
-    ],
+  "directories": {
+    "buildResources": "assets",
+    "output": "release"
+  },
 
-    "win": {
-      "icon": "assets/icons/icon.ico",
-      "target": "nsis"
-    },
+  "files": [
+    "dist/**",
+    "electron/**",
+    "assets/**",
+    "package.json"
+  ],
 
-    "mac": {
-      "icon": "assets/icons/icon.icns",
-      "target": "dmg",
-      "category": "public.app-category.productivity"
-    },
-
-    "linux": {
-      "icon": "assets/icons/icon.png",
-      "target": ["AppImage", "deb"]
+  "win": {
+  "icon": "assets/icons/icon.ico",
+  "target": [
+    {
+      "target": "nsis",
+      "arch": ["x64"]
     }
+  ]
+},
+ "mac": {
+  "target": "dmg",
+  "icon": "assets/icons/icon.icns",
+  "hardenedRuntime": true,
+  "entitlements": "assets/entitlements.mac.plist",
+  "entitlementsInherit": "assets/entitlements.mac.plist",
+  "gatekeeperAssess": false
+},
+
+  "linux": {
+    "icon": "assets/icons/icon.png",
+    "target": ["AppImage", "deb"]
   }
+} 
 }

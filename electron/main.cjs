@@ -39,12 +39,23 @@ let TASK_RUNNING = false;
 let POPUP_OPEN = false;
 let CURRENT_WORKLOG_ID = null;
 
-const IDLE_LIMIT = 30;
+/* ================= IDLE CONFIG ================= */
+
+// max idle = 5 min
+const IDLE_LIMIT = 300;
+
+// random popup window = 2–5 min
+const RANDOM_IDLE_MIN = 120;
+const RANDOM_IDLE_MAX = 300;
+
 const POPUP1_TIMEOUT = 60_000;
 const POPUP_COOLDOWN = 15_000;
 
 let LAST_POPUP_AT = 0;
 let POPUP1_TIMER = null;
+
+// random idle state
+let RANDOM_IDLE_TRIGGER = null;
 
 /* ================= MAIN WINDOW ================= */
 
@@ -103,6 +114,14 @@ function centerWindow(win) {
   win.setPosition(
     Math.round(x + (width - bounds.width) / 2),
     Math.round(y + (height - bounds.height) / 2)
+  );
+}
+
+function getRandomIdleTime() {
+  return (
+    Math.floor(
+      Math.random() * (RANDOM_IDLE_MAX - RANDOM_IDLE_MIN + 1)
+    ) + RANDOM_IDLE_MIN
   );
 }
 
@@ -252,13 +271,32 @@ app.whenReady().then(() => {
   setInterval(() => {
     const idle = powerMonitor.getSystemIdleTime();
 
+    console.log(
+      `🕒 IDLE=${idle}s | TASK_RUNNING=${TASK_RUNNING} | POPUP_OPEN=${POPUP_OPEN}`
+    );
+
+    // user active again → reset random timer
+    if (idle < 2) {
+      RANDOM_IDLE_TRIGGER = null;
+      return;
+    }
+
+    // generate random trigger once per idle session
+    if (!RANDOM_IDLE_TRIGGER && idle >= RANDOM_IDLE_MIN) {
+      RANDOM_IDLE_TRIGGER = getRandomIdleTime();
+      console.log("🎯 Popup will show at:", RANDOM_IDLE_TRIGGER, "seconds");
+    }
+
     if (
-      idle >= IDLE_LIMIT &&
+      RANDOM_IDLE_TRIGGER &&
+      idle >= RANDOM_IDLE_TRIGGER &&
+      idle <= IDLE_LIMIT &&
       TASK_RUNNING &&
       !POPUP_OPEN &&
       Date.now() - LAST_POPUP_AT > POPUP_COOLDOWN
     ) {
       openIdleCheckPopup();
+      RANDOM_IDLE_TRIGGER = null; // prevent repeat
     }
   }, 5000);
 });
