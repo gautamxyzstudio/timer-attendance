@@ -661,7 +661,7 @@ export default function AttendanceApp() {
 
                 {!isCheckedIn ? (
                   <div className="flex flex-col items-center justify-center h-full text-center">
-                    <div className="text-lg font-semibold text-gray-800">
+                    <div className="text-lg font-semibold text-[#FF7300]">
                       You have not checked in today
                     </div>
                     <div className="text-sm text-gray-500 mt-2">
