@@ -79,6 +79,21 @@ function createMainWindow() {
   } else {
     mainWindow.loadFile(path.join(__dirname, "../dist/index.html"));
   }
+
+    mainWindow.on("close", (e) => {
+    if (!TASK_RUNNING) return;
+
+    e.preventDefault();
+
+    console.log("🛑 App closing → asking renderer to stop tasks");
+    mainWindow.webContents.send("force-stop-tasks");
+
+    setTimeout(() => {
+      TASK_RUNNING = false;
+      mainWindow.destroy();
+      app.quit();
+    }, 1200);
+  });
 }
  
 /* ================= HELPERS ================= */
