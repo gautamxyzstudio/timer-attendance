@@ -617,7 +617,7 @@ export default function AttendanceApp() {
             <div style={{ width: 515 }} className="flex-1 overflow-hidden pt-2 bg-white rounded-xl shadow-sm">
 
               {/* ADD TASK */}
-              {activeTab === "today" && isCheckedIn && (
+              {activeTab === "today" && isCheckedIn && !isCheckedOut && (
                 <div className="mb-3 px-3" style={{ width: 491, height: 36 }}>
                   <AddTask
                     workLogId={todayLog.id}
@@ -652,9 +652,10 @@ export default function AttendanceApp() {
               )}
 
               {/* ORANGE DIVIDER */}
-              {isCheckedIn && (
+              {activeTab === "today" && isCheckedIn && !isCheckedOut && (
                 <div className="w-[490] h-px bg-[#FF7300] mb-2" />
               )}
+
               {/* TABLE */}
               <div className="overflow-auto py-2 mx-3 no-scrollbar" style={{ height: 260 }}>
 
@@ -665,6 +666,16 @@ export default function AttendanceApp() {
                     </div>
                     <div className="text-sm text-gray-500 mt-2">
                       Please check in to start tracking your tasks and time
+                    </div>
+                  </div>
+                ) : isCheckedOut ? (
+                  /* ✅ CHECKED OUT */
+                  <div className="flex flex-col items-center justify-center h-full text-center">
+                    <div className="text-lg font-semibold text-[#FF7300]">
+                      ✅ All done for today
+                    </div>
+                    <div className="text-sm text-gray-500 mt-2">
+                      See you tomorrow 👋
                     </div>
                   </div>
                 ) : (
@@ -798,11 +809,6 @@ export default function AttendanceApp() {
                         </tr>
                       ))}
                     </tbody>
-                    {isCheckedOut && (
-                      <div className="mb-2 px-3 py-2 rounded-md bg-green-50 text-green-700 text-sm font-medium text-center">
-                        ✅ All done for today
-                      </div>
-                    )}
                   </table>
                 )}
               </div>
