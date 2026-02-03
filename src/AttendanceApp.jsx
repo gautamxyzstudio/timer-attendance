@@ -66,7 +66,7 @@ const getUserFromCache = () => {
 
 /* ================= COMPONENT ================= */
 
-export default function AttendanceApp() {
+export default function AttendanceApp({ onLogout }) {
   const [todayLog, setTodayLog] = useState(null);
   const [historyTasks, setHistoryTasks] = useState([]);
   const [activeTab, setActiveTab] = useState("today");
@@ -516,8 +516,7 @@ export default function AttendanceApp() {
       // 🔐 Logout (token/session clear)
       logout();
 
-      // 🚪 Hard redirect to reset app state
-      window.location.href = "/";
+      onLogout();
     }
   };
 

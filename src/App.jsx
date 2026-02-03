@@ -23,9 +23,9 @@ export default function App() {
   return (
     <div className="h-screen">
         {user.user_type === "Hr" ? (
-          <HrTimeline />
+          <HrTimeline onLogout={handleLogout} />
         ) : (
-          <AttendanceApp />
+          <AttendanceApp onLogout={handleLogout}/>
         )}
       
     </div>
