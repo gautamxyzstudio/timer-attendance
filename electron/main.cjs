@@ -8,17 +8,34 @@ const {
 
 const path = require("path");
 const { autoUpdater } = require("electron-updater");
+const log = require("electron-log");
+
+/* ================= LOGGER ================= */
+
+autoUpdater.logger = log;
+autoUpdater.logger.transports.file.level = "info";
+autoUpdater.allowPrerelease = false;
+autoUpdater.allowDowngrade = false;
+autoUpdater.autoDownload = false;
+autoUpdater.autoInstallOnAppQuit = true;
+
+function sendToRenderer(channel, data) {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send(channel, data);
+  }
+}
+
+function sendUpdaterStatus(status, data = null) {
+  sendToRenderer("updater-status", { status, data });
+}
 
 
-/* ================= APP NAME & WINDOWS ID ================= */
+/* ================= APP NAME ================= */
 
 app.setName("Time Tracker");
-
 if (process.platform === "win32") {
   app.setAppUserModelId("com.xyz.timetracker");
 }
-
-/* ================= SINGLE INSTANCE ================= */
 
 if (!app.requestSingleInstanceLock()) {
   app.quit();
@@ -26,13 +43,13 @@ if (!app.requestSingleInstanceLock()) {
 }
 
 app.disableHardwareAcceleration();
-
-/* ================= ENV ================= */
-
 const isDev = !app.isPackaged;
+
 
 /* ================= STATE ================= */
 autoUpdater.autoDownload = false;
+autoUpdater.autoInstallOnAppQuit = true;
+
 let mainWindow = null;
 let popupWindow = null;
 let idleCounterWindow = null;
@@ -67,7 +84,6 @@ function stopTasksOnExit(reason) {
     } catch { }
   }
 }
-
 
 /* ================= MAIN WINDOW ================= */
 
@@ -253,10 +269,32 @@ ipcMain.on("popup-response", (_, payload) => {
   }
 });
 
+
 /* ================= AUTO UPDATE ================= */
 
+// ipcMain.on("check-for-updates", () => {
+//   if (!app.isPackaged) {
+//     console.log("Updater blocked: app not installed");
+//     sendToRenderer("update-error", "App must be installed to check updates");
+//     return;
+//   }
+
+//   console.log("Manual update check triggered");
+//   autoUpdater.checkForUpdates();
+// });
+
 ipcMain.on("check-for-updates", () => {
-  if (isDev) return;
+
+  // DEV MODE
+  if (!app.isPackaged) {
+    console.log("Dev mode — updater skipped");
+
+    // send fake success so UI resets
+    sendUpdaterStatus("uptodate", "Development mode");
+    return;
+  }
+
+  console.log("Manual update check triggered");
   autoUpdater.checkForUpdates();
 });
 
@@ -269,6 +307,44 @@ ipcMain.on("install-update", () => {
   if (isDev) return;
   autoUpdater.quitAndInstall();
 });
+
+/* ================= AUTO UPDATER EVENTS ================= */
+
+autoUpdater.on("checking-for-update", () => {
+  console.log("checking update");
+  sendUpdaterStatus("checking");
+});
+
+autoUpdater.on("update-available", (info) => {
+  console.log("update available:", info.version);
+  sendUpdaterStatus("available", info.version);
+  autoUpdater.downloadUpdate();
+});
+
+autoUpdater.on("update-not-available", () => {
+  console.log("no update");
+  sendUpdaterStatus("uptodate");
+});
+
+autoUpdater.on("download-progress", (progress) => {
+  console.log("downloading:", progress.percent);
+  sendUpdaterStatus("downloading", Math.round(progress.percent));
+});
+
+autoUpdater.on("update-downloaded", () => {
+  console.log("update downloaded");
+  sendUpdaterStatus("downloaded");
+
+  setTimeout(() => {
+    autoUpdater.quitAndInstall();
+  }, 2500);
+});
+
+autoUpdater.on("error", (err) => {
+  console.log("updater error:", err);
+  sendUpdaterStatus("error", err?.message);
+});
+
 
 
 /* ================= IDLE MONITOR ================= */
@@ -332,9 +408,15 @@ app.whenReady().then(() => {
   }, 5000);
 
   // 🔄 Check for updates on startup (production only)
-  if (!isDev) {
-    autoUpdater.checkForUpdates();
-  }
+  mainWindow.once("ready-to-show", () => {
+    if (!isDev) {
+      setTimeout(() => {
+        console.log("Startup update check");
+        autoUpdater.checkForUpdates();
+      }, 5000);
+    }
+  });
+
 
 });
 
@@ -355,41 +437,16 @@ process.on("SIGINT", () => {
   stopTasksOnExit("sigint");
 });
 
-function sendToRenderer(channel, data) {
-  if (mainWindow && !mainWindow.isDestroyed()) {
-    mainWindow.webContents.send(channel, data);
-  }
-}
-
-/* ================= AUTO UPDATE EVENTS ================= */
-autoUpdater.on("checking-for-update", () => {
-  sendToRenderer("update-checking");
-});
-
-autoUpdater.on("update-available", () => {
-  sendToRenderer("update-available");
-});
-
-autoUpdater.on("update-not-available", () => {
-  sendToRenderer("update-not-available");
-});
-
-autoUpdater.on("download-progress", (progress) => {
-  sendToRenderer("update-progress", Math.round(progress.percent));
-});
-
-autoUpdater.on("update-downloaded", () => {
-  sendToRenderer("update-downloaded");
-});
-
-autoUpdater.on("error", (err) => {
-  sendToRenderer("update-error", err?.message);
-});
-
-
 /* ================= EXIT ================= */
 
 app.on("window-all-closed", () => {
   if (process.platform !== "darwin") app.quit();
 });
+
+
+
+
+
+
+
 
