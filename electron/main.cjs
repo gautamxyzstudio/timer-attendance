@@ -14,6 +14,14 @@ const log = require("electron-log");
 
 autoUpdater.logger = log;
 autoUpdater.logger.transports.file.level = "info";
+
+// VERY IMPORTANT (tells updater where latest.yml exists)
+autoUpdater.setFeedURL({
+  provider: "github",
+  owner: "gautamxyzstudio",
+  repo: "timer-attendance"
+});
+
 autoUpdater.allowPrerelease = false;
 autoUpdater.allowDowngrade = false;
 autoUpdater.autoDownload = false;
@@ -47,7 +55,7 @@ const isDev = !app.isPackaged;
 
 
 /* ================= STATE ================= */
-autoUpdater.autoDownload = false;
+autoUpdater.autoDownload = true;
 autoUpdater.autoInstallOnAppQuit = true;
 
 let mainWindow = null;
@@ -272,17 +280,6 @@ ipcMain.on("popup-response", (_, payload) => {
 
 /* ================= AUTO UPDATE ================= */
 
-// ipcMain.on("check-for-updates", () => {
-//   if (!app.isPackaged) {
-//     console.log("Updater blocked: app not installed");
-//     sendToRenderer("update-error", "App must be installed to check updates");
-//     return;
-//   }
-
-//   console.log("Manual update check triggered");
-//   autoUpdater.checkForUpdates();
-// });
-
 ipcMain.on("check-for-updates", () => {
 
   // DEV MODE
@@ -318,7 +315,6 @@ autoUpdater.on("checking-for-update", () => {
 autoUpdater.on("update-available", (info) => {
   console.log("update available:", info.version);
   sendUpdaterStatus("available", info.version);
-  autoUpdater.downloadUpdate();
 });
 
 autoUpdater.on("update-not-available", () => {
@@ -334,10 +330,6 @@ autoUpdater.on("download-progress", (progress) => {
 autoUpdater.on("update-downloaded", () => {
   console.log("update downloaded");
   sendUpdaterStatus("downloaded");
-
-  setTimeout(() => {
-    autoUpdater.quitAndInstall();
-  }, 2500);
 });
 
 autoUpdater.on("error", (err) => {
@@ -406,16 +398,6 @@ app.whenReady().then(() => {
       RANDOM_IDLE_TRIGGER = null;
     }
   }, 5000);
-
-  // 🔄 Check for updates on startup (production only)
-  mainWindow.once("ready-to-show", () => {
-    if (!isDev) {
-      setTimeout(() => {
-        console.log("Startup update check");
-        autoUpdater.checkForUpdates();
-      }, 5000);
-    }
-  });
 
 
 });

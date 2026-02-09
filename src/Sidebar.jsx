@@ -87,7 +87,7 @@ export default function Sidebar({ activeFilter, setActiveFilter }) {
           break;
 
         case "error":
-          setUpdateStatus("Update failed");
+          setUpdateStatus("Cannot reach update server");
           break;
 
         default:

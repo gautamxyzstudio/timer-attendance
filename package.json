@@ -2,7 +2,7 @@
   "name": "time-tracker",
   "productName": "Time Tracker",
   "private": true,
-  "version": "1.0.5",
+  "version": "1.0.6",
   "description": "Employee Time Tracking Desktop App",
   "author": "XYZ Studio",
   "type": "module",
@@ -51,7 +51,8 @@
     {
       "provider": "github",
       "owner": "gautamxyzstudio",
-      "repo": "timer-attendance"
+      "repo": "timer-attendance",
+       "releaseType": "release"
     }
   ],
   "nsis": {
