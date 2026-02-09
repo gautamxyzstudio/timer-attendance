@@ -2,7 +2,7 @@
   "name": "time-tracker",
   "productName": "Time Tracker",
   "private": true,
-  "version": "1.0.6",
+  "version": "1.0.7",
   "description": "Employee Time Tracking Desktop App",
   "author": "XYZ Studio",
   "type": "module",
