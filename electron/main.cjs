@@ -10,18 +10,20 @@ const path = require("path");
 const { autoUpdater } = require("electron-updater");
 const log = require("electron-log");
 
-/* ================= LOGGER ================= */
-
 autoUpdater.logger = log;
 autoUpdater.logger.transports.file.level = "info";
 
-// VERY IMPORTANT (tells updater where latest.yml exists)
-autoUpdater.setFeedURL({
-  provider: "github",
-  owner: "gautamxyzstudio",
-  repo: "timer-attendance"
-});
+autoUpdater.allowPrerelease = false;
+autoUpdater.allowDowngrade = false;
+autoUpdater.autoDownload = true;
+autoUpdater.autoInstallOnAppQuit = true;
+/* ================= LOGGER ================= */
 
+// // VERY IMPORTANT (tells updater where latest.yml exists)
+// autoUpdater.setFeedURL({
+//   provider: "generic",
+//   url: "https://storage.googleapis.com/timetracker-updates/"
+// });
 autoUpdater.allowPrerelease = false;
 autoUpdater.allowDowngrade = false;
 autoUpdater.autoDownload = false;
@@ -333,10 +335,9 @@ autoUpdater.on("update-downloaded", () => {
 });
 
 autoUpdater.on("error", (err) => {
-  console.log("updater error:", err);
-  sendUpdaterStatus("error", err?.message);
+  console.error("AUTO UPDATE ERROR FULL:", err);
+  sendUpdaterStatus("error", err ? err.stack || err.message : "unknown");
 });
-
 
 
 /* ================= IDLE MONITOR ================= */

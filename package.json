@@ -1,12 +1,17 @@
 {
   "name": "time-tracker",
-  "productName": "Time Tracker",
+  "productName": "Time-Tracker",
   "private": true,
+<<<<<<< Updated upstream
   "version": "1.0.7",
+=======
+  "version": "1.0.18",
+>>>>>>> Stashed changes
   "description": "Employee Time Tracking Desktop App",
   "author": "XYZ Studio",
   "type": "module",
   "main": "electron/main.cjs",
+
   "scripts": {
     "dev": "vite",
     "start": "concurrently \"vite\" \"wait-on http://localhost:5173 && electron electron/main.cjs\"",
@@ -15,6 +20,7 @@
     "dist:win": "npm run build:web && electron-builder --win",
     "dist:mac": "npm run build:web && electron-builder --mac"
   },
+
   "dependencies": {
     "@tailwindcss/vite": "^4.1.18",
     "axios": "^1.13.2",
@@ -26,6 +32,7 @@
     "react-router-dom": "^7.12.0",
     "tailwindcss": "^4.1.18"
   },
+
   "devDependencies": {
     "@eslint/js": "^9.39.1",
     "@vitejs/plugin-react": "^5.1.1",
@@ -39,72 +46,55 @@
     "vite": "^7.2.4",
     "wait-on": "^7.2.0"
   },
-  "build": {
-    "appId": "com.xyz.timetracker",
-    "productName": "Time Tracker",
-    "asar": true,
-    "directories": {
-      "buildResources": "assets",
-      "output": "release"
-    },
-     "publish": [
+"build": {
+  "appId": "com.xyz.timetracker",
+  "productName": "Time Tracker",
+
+  "artifactName": "Time-Tracker-${version}-${arch}.${ext}",
+
+  "asar": true,
+
+  "directories": {
+    "buildResources": "assets",
+    "output": "release"
+  },
+
+  "publish": [
     {
-      "provider": "github",
-      "owner": "gautamxyzstudio",
-      "repo": "timer-attendance",
-       "releaseType": "release"
+      "provider": "generic",
+      "url": "https://storage.googleapis.com/timetracker-updates"
     }
   ],
-  "nsis": {
-  "oneClick": true,
-  "perMachine": false,
-  "allowElevation": true,
-  "allowToChangeInstallationDirectory": false,
-  "createDesktopShortcut": true,
-  "createStartMenuShortcut": true,
-  "shortcutName": "Time Tracker"
-},
 
-    "files": [
-      "dist/**",
-      "electron/**",
-      "assets/**",
-      "package.json"
+  "files": [
+    "dist/**",
+    "electron/**",
+    "assets/**",
+    "package.json"
+  ],
+
+  "mac": {
+    "target": [
+      { "target": "dmg", "arch": ["x64", "arm64"] }
     ],
-    "win": {
-      "icon": "assets/icons/icon.ico",
-      "target": [
-        {
-          "target": "nsis",
-          "arch": [
-            "x64"
-          ]
-        }
-      ]
-    },
-    "mac": {
-      "target": [
-        {
-          "target": "dmg",
-          "arch": [
-            "x64",
-            "arm64"
-          ]
-        }
-      ],
-      "icon": "assets/icons/icon.icns",
-      "hardenedRuntime": true,
-      "gatekeeperAssess": false,
-      "entitlements": "assets/entitlements.mac.plist",
-      "entitlementsInherit": "assets/entitlements.mac.plist",
-      "identity":null
-    },
-    "linux": {
-      "icon": "assets/icons/icon.png",
-      "target": [
-        "AppImage",
-        "deb"
-      ]
-    }
+    "icon": "assets/icons/icon.icns",
+    "hardenedRuntime": true,
+    "gatekeeperAssess": false,
+    "entitlements": "assets/entitlements.mac.plist",
+    "entitlementsInherit": "assets/entitlements.mac.plist",
+    "identity": null
+  },
+
+  "win": {
+    "icon": "assets/icons/icon.ico",
+    "target": [
+      { "target": "nsis", "arch": ["x64"] }
+    ]
+  },
+
+  "linux": {
+    "icon": "assets/icons/icon.png",
+    "target": ["AppImage", "deb"]
   }
+}
 }
