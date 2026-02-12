@@ -51,11 +51,11 @@ const selected = safeProjects.find(
       {open && (
         <div
           className="
-            absolute z-30 mt-2 min-w-full
-            bg-white rounded-xl
-            shadow-[0_12px_30px_rgba(0,0,0,0.15)]
-            border border-gray-100
-            overflow-hidden
+              absolute z-30 mt-2 min-w-full
+      bg-white rounded-xl
+      shadow-[0_12px_30px_rgba(0,0,0,0.15)]
+      border border-gray-100
+      max-h-50 overflow-y-auto h-auto no-scrollbar
           "
         >
          {safeProjects.map((p) => (
