@@ -7,11 +7,11 @@ const ProjectDropdown = ({ projects, value, onChange }) => {
   const [open, setOpen] = useState(false);
   const ref = useRef(null);
 
- const safeProjects = Array.isArray(projects) ? projects : [];
+  const safeProjects = Array.isArray(projects) ? projects : [];
 
-const selected = safeProjects.find(
-  (p) => p.id === Number(value)
-);
+  const selected = safeProjects.find(
+    (p) => p.id === Number(value)
+  );
 
 
   // close on outside click
@@ -51,14 +51,14 @@ const selected = safeProjects.find(
       {open && (
         <div
           className="
-            absolute z-30 mt-2 min-w-full
-            bg-white rounded-xl
-            shadow-[0_12px_30px_rgba(0,0,0,0.15)]
-            border border-gray-100
-            overflow-hidden
+                  absolute z-30 mt-2 min-w-full
+      bg-white rounded-xl
+      shadow-[0_12px_30px_rgba(0,0,0,0.15)]
+      border border-gray-100
+      max-h-50 overflow-y-auto h-auto no-scrollbar
           "
         >
-         {safeProjects.map((p) => (
+          {safeProjects.map((p) => (
             <div
               key={p.id}
               onClick={() => {
@@ -94,7 +94,7 @@ const AddTask = ({ workLogId, onTaskAdded }) => {
     const fetchProjects = async () => {
       try {
         const res = await api.get("/projects/myProjects");
-       setProjects(res.data?.projects || []);
+        setProjects(res.data?.projects || []);
       } catch {
         setError("Failed to load projects");
       }

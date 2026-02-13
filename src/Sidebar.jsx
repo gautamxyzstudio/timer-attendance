@@ -161,7 +161,7 @@ export default function Sidebar({ activeFilter, setActiveFilter }) {
         {/* COMPLETED */}
         <button
           onClick={() => setActiveFilter("completed")}
-          className={`w-full text-left px-3 py-2 rounded-lg text-sm font-medium ${
+          className={`w-full text-left px-1 py-2 rounded-lg text-sm font-medium ${
             activeFilter === "completed"
               ? "bg-green-100 text-green-700"
               : "text-gray-700"

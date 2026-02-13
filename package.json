@@ -2,11 +2,7 @@
   "name": "time-tracker",
   "productName": "Time-Tracker",
   "private": true,
-<<<<<<< Updated upstream
-  "version": "1.0.7",
-=======
-  "version": "1.0.18",
->>>>>>> Stashed changes
+  "version": "1.0.19",
   "description": "Employee Time Tracking Desktop App",
   "author": "XYZ Studio",
   "type": "module",

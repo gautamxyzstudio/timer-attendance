@@ -67,6 +67,10 @@ let idleCounterWindow = null;
 let TASK_RUNNING = false;
 let POPUP_OPEN = false;
 
+// ⭐ tells app an update is installing
+let IS_INSTALLING_UPDATE = false;
+
+
 /* ================= IDLE CONFIG ================= */
 
 const IDLE_LIMIT = 300; // 5 min
@@ -123,12 +127,35 @@ function createMainWindow() {
     mainWindow.loadFile(path.join(__dirname, "../dist/index.html"));
   }
 
+  // mainWindow.on("close", (e) => {
+  //   if (!TASK_RUNNING) return;
+
+  //   e.preventDefault();
+
+  //   console.log("🛑 App closing → asking renderer to stop tasks");
+  //   mainWindow.webContents.send("force-stop-tasks");
+
+  //   setTimeout(() => {
+  //     TASK_RUNNING = false;
+  //     mainWindow.destroy();
+  //     app.quit();
+  //   }, 1200);
+  // });
+
   mainWindow.on("close", (e) => {
+
+    // ⭐ If updater is installing → DO NOT BLOCK CLOSE
+    if (IS_INSTALLING_UPDATE) {
+      console.log("Updater closing app");
+      return;
+    }
+
+    // Normal user close protection (your old logic preserved)
     if (!TASK_RUNNING) return;
 
     e.preventDefault();
 
-    console.log("🛑 App closing → asking renderer to stop tasks");
+    console.log("🛑 User closing app → stopping tasks safely");
     mainWindow.webContents.send("force-stop-tasks");
 
     setTimeout(() => {
@@ -137,6 +164,7 @@ function createMainWindow() {
       app.quit();
     }, 1200);
   });
+
 }
 
 /* ================= HELPERS ================= */
@@ -175,6 +203,8 @@ function openIdleCheckPopup() {
     alwaysOnTop: true,
     skipTaskbar: true,
     resizable: false,
+    focusable: true,            // ⭐ REQUIRED FOR MAC
+    fullscreenable: false,
     icon: path.join(__dirname, "../assets/icons/icon.png"),
     webPreferences: {
       preload: path.join(__dirname, "preload.cjs"),
@@ -182,11 +212,18 @@ function openIdleCheckPopup() {
     }
   });
 
+  // ⭐⭐⭐ macOS FULLSCREEN FIX
+  if (process.platform === "darwin") {
+    popupWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+    popupWindow.setAlwaysOnTop(true, "screen-saver");
+  }
+
+
   popupWindow.loadFile(path.join(__dirname, "popup.html"));
 
   popupWindow.once("ready-to-show", () => {
     centerWindow(popupWindow);
-    popupWindow.show();
+    popupWindow.showInactive();
   });
 
   POPUP1_TIMER = setTimeout(() => {
@@ -231,6 +268,8 @@ function openIdleCounterPopup() {
     alwaysOnTop: true,
     skipTaskbar: true,
     resizable: false,
+    focusable: true,            // ⭐ REQUIRED FOR MAC
+    fullscreenable: false,
     icon: path.join(__dirname, "../assets/icons/icon.png"),
     webPreferences: {
       preload: path.join(__dirname, "preload.cjs"),
@@ -329,10 +368,37 @@ autoUpdater.on("download-progress", (progress) => {
   sendUpdaterStatus("downloading", Math.round(progress.percent));
 });
 
+// autoUpdater.on("update-downloaded", () => {
+//   console.log("update downloaded");
+//   sendUpdaterStatus("downloaded");
+// });
+
 autoUpdater.on("update-downloaded", () => {
-  console.log("update downloaded");
-  sendUpdaterStatus("downloaded");
+  console.log("Update downloaded — installing now");
+
+  // enter update mode
+  IS_INSTALLING_UPDATE = true;
+
+  // stop tracking immediately
+  TASK_RUNNING = false;
+
+  // tell renderer to save data (do not wait)
+  try {
+    mainWindow?.webContents.send("force-stop-tasks");
+  } catch { }
+
+  // VERY IMPORTANT → close popup windows
+  try { popupWindow?.destroy(); } catch { }
+  try { idleCounterWindow?.destroy(); } catch { }
+
+  sendUpdaterStatus("installing");
+
+  // allow renderer 300ms to flush API/save
+  setTimeout(() => {
+    autoUpdater.quitAndInstall(false, true);
+  }, 300);
 });
+
 
 autoUpdater.on("error", (err) => {
   console.error("AUTO UPDATE ERROR FULL:", err);
@@ -409,6 +475,7 @@ app.on("session-end", () => {
 });
 
 app.on("before-quit", () => {
+  if (IS_INSTALLING_UPDATE) return;
   stopTasksOnExit("before-quit");
 });
 
