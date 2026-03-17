@@ -172,6 +172,11 @@ export default function AttendanceApp({ onLogout }) {
   const isCheckedIn = Boolean(todayLog?.id);
   const isCheckedOut = Boolean(todayLog?.out);
 
+  const isAttendancePaused =
+    isCheckedIn &&
+    !isCheckedOut &&
+    !todayLog?.is_checked_in;
+
 
   /* ===== SEND WORKLOG ID TO ELECTRON ===== */
   useEffect(() => {
@@ -380,6 +385,11 @@ export default function AttendanceApp({ onLogout }) {
 
     if (isLunchBreak()) {
       alert("Lunch break from 1–2 PM. Tasks cannot be started.");
+      return;
+    }
+
+    if (isAttendancePaused) {
+      alert("Attendance paused. Please check in again to resume tasks.");
       return;
     }
     const previousLog = todayLog;
@@ -795,8 +805,10 @@ export default function AttendanceApp({ onLogout }) {
                               ) : (
                                 <button
                                   onClick={() => startTask(task)}
-                                  disabled={isLunchBreak()}
-                                  className={`w-6 h-6 text-gray-50 bg-[#797571] rounded-full ${isLunchBreak() ? "opacity-40 cursor-not-allowed" : ""
+                                  disabled={isLunchBreak() || isAttendancePaused}
+                                  className={`w-6 h-6 text-gray-50 bg-[#797571] rounded-full ${isLunchBreak() || isAttendancePaused
+                                    ? "opacity-40 cursor-not-allowed"
+                                    : ""
                                     }`}
                                 >
                                   ▶
