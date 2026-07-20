@@ -13,7 +13,8 @@
     "build:web": "vite build",
     "dist": "npm run build:web && electron-builder",
     "dist:win": "npm run build:web && electron-builder --win",
-    "dist:mac": "npm run build:web && electron-builder --mac"
+    "dist:mac": "npm run build:web && electron-builder --mac",
+    "dist:linux": "npm run build:web && electron-builder --linux"
   },
   "dependencies": {
     "@tailwindcss/vite": "^4.1.18",
@@ -47,24 +48,23 @@
       "buildResources": "assets",
       "output": "release"
     },
-     "publish": [
-    {
-      "provider": "github",
-      "owner": "gautamxyzstudio",
-      "repo": "timer-attendance",
-       "releaseType": "release"
-    }
-  ],
-  "nsis": {
-  "oneClick": true,
-  "perMachine": false,
-  "allowElevation": true,
-  "allowToChangeInstallationDirectory": false,
-  "createDesktopShortcut": true,
-  "createStartMenuShortcut": true,
-  "shortcutName": "Time Tracker"
-},
-
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "gautamxyzstudio",
+        "repo": "timer-attendance",
+        "releaseType": "release"
+      }
+    ],
+    "nsis": {
+      "oneClick": true,
+      "perMachine": false,
+      "allowElevation": true,
+      "allowToChangeInstallationDirectory": false,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Time Tracker"
+    },
     "files": [
       "dist/**",
       "electron/**",
@@ -97,13 +97,24 @@
       "gatekeeperAssess": false,
       "entitlements": "assets/entitlements.mac.plist",
       "entitlementsInherit": "assets/entitlements.mac.plist",
-      "identity":null
+      "identity": null
     },
     "linux": {
       "icon": "assets/icons/icon.png",
+      "category": "Utility",
       "target": [
-        "AppImage",
-        "deb"
+        {
+          "target": "AppImage",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "deb",
+          "arch": [
+            "x64"
+          ]
+        }
       ]
     }
   }
