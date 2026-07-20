@@ -35,7 +35,7 @@ const isLunchBreak = () => {
     new Date().toLocaleString("en-US", { timeZone: "Asia/Kolkata" })
   );
   const hour = now.getHours();
-  return hour >= 13 && hour < 14; // 1 PM – 2 PM
+  return hour >= 14 && hour < 15; // 2 PM – 3 PM
 };
 
 
@@ -384,7 +384,7 @@ export default function AttendanceApp({ onLogout }) {
   const startTask = async (task) => {
 
     if (isLunchBreak()) {
-      alert("Lunch break from 1–2 PM. Tasks cannot be started.");
+      alert("Lunch break from 2–3 PM. Tasks cannot be started.");
       return;
     }
 
