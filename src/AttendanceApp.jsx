@@ -33,13 +33,149 @@ const getLiveSeconds = (task) => {
 
 const todayDate = () => new Date().toISOString().slice(0, 10);
 
+/* ================= SESSION & WORKED TODAY HELPERS ================= */
+
+const getTodayDateStringIST = () => {
+  return new Date()
+    .toLocaleString("en-CA", { timeZone: "Asia/Kolkata" })
+    .slice(0, 10);
+};
+
+const getSessionDateIST = (isoString) => {
+  if (!isoString) return "";
+  try {
+    return new Date(isoString)
+      .toLocaleString("en-CA", { timeZone: "Asia/Kolkata" })
+      .slice(0, 10);
+  } catch {
+    return "";
+  }
+};
+
+const isSessionFromToday = (session, todayDateStr) => {
+  const startStr =
+    session.started_at ||
+    session.start ||
+    session.start_time ||
+    session.startTime ||
+    session.createdAt;
+  const stopStr =
+    session.stopped_at ||
+    session.end ||
+    session.ended_at ||
+    session.end_time ||
+    session.endTime;
+
+  const startDateIST = getSessionDateIST(startStr);
+  const stopDateIST = getSessionDateIST(stopStr);
+
+  return startDateIST === todayDateStr || stopDateIST === todayDateStr;
+};
+
+const getSessionDurationSeconds = (session) => {
+  if (!session) return 0;
+
+  const explicitSec =
+    session.duration_seconds ??
+    session.duration ??
+    session.seconds ??
+    session.total_seconds;
+  if (typeof explicitSec === "number" && explicitSec > 0) {
+    return explicitSec;
+  }
+
+  const startStr =
+    session.started_at ||
+    session.start ||
+    session.start_time ||
+    session.startTime ||
+    session.createdAt;
+  const stopStr =
+    session.stopped_at ||
+    session.end ||
+    session.ended_at ||
+    session.end_time ||
+    session.endTime;
+
+  if (startStr && stopStr) {
+    const diff = Math.floor(
+      (new Date(stopStr).getTime() - new Date(startStr).getTime()) / 1000
+    );
+    return Math.max(0, diff);
+  }
+
+  return 0;
+};
+
+const calculateTodayWorkedSeconds = (logsByTab, runningTask) => {
+  const todayDateStr = getTodayDateStringIST();
+
+  // Deduplicate all tasks across all tabs
+  const taskMap = new Map();
+  Object.values(logsByTab || {}).forEach((tabList) => {
+    (tabList || []).forEach((t) => {
+      const key = t.id || t.task_id || t.title;
+      if (key && !taskMap.has(key)) {
+        taskMap.set(key, t);
+      }
+    });
+  });
+
+  let completedTodaySeconds = 0;
+
+  taskMap.forEach((task) => {
+    const sessions = Array.isArray(task.work_sessions)
+      ? task.work_sessions
+      : Array.isArray(task.task?.work_sessions)
+      ? task.task.work_sessions
+      : [];
+
+    if (sessions.length > 0) {
+      // Task has sessions: strictly sum ONLY today's sessions!
+      const todaySessions = sessions.filter((s) => isSessionFromToday(s, todayDateStr));
+      const taskTodaySum = todaySessions.reduce(
+        (sum, s) => sum + getSessionDurationSeconds(s),
+        0
+      );
+      completedTodaySeconds += taskTodaySum;
+    } else {
+      // Fallback only if task has NO sessions at all:
+      // Check if task itself was created today before considering its total_time_taken
+      const createdAt = task.createdAt || task.task?.createdAt || task.created_at;
+      const createdDateIST = getSessionDateIST(createdAt);
+
+      if (createdDateIST === todayDateStr) {
+        const sec = Number(
+          task.total_time_taken ??
+          task.total_seconds ??
+          task.time_spent ??
+          task.task?.total_seconds ??
+          0
+        );
+        completedTodaySeconds += Math.max(0, sec);
+      }
+    }
+  });
+
+  // Calculate live running time (if a task is currently active)
+  let liveRunningSeconds = 0;
+  if (runningTask && runningTask.is_running && runningTask.last_started_at) {
+    const elapsed = Math.floor(
+      (Date.now() - new Date(runningTask.last_started_at).getTime()) / 1000
+    );
+    liveRunningSeconds = Math.max(0, elapsed);
+  }
+
+  return completedTodaySeconds + liveRunningSeconds;
+};
+
 const isLunchBreak = () => {
   const now = new Date(
     new Date().toLocaleString("en-US", { timeZone: "Asia/Kolkata" })
   );
   const hour = now.getHours();
-  // Production lunch break: 2 PM – 3 PM (hour 14). Also includes hour 18 for testing.
-  return (hour >= 14 && hour < 15);
+  // lunch break: 2 PM – 3 PM 
+  return (hour >= 19 && hour < 20);
 };
 
 const normalizeWorkLogItem = (item) => {
@@ -51,6 +187,10 @@ const normalizeWorkLogItem = (item) => {
   );
   const workSessions = Array.isArray(taskObj.work_sessions)
     ? taskObj.work_sessions
+    : Array.isArray(item.work_sessions)
+    ? item.work_sessions
+    : Array.isArray(taskItem.work_sessions)
+    ? taskItem.work_sessions
     : [];
 
   const rawStatus = (
@@ -155,7 +295,6 @@ export default function AttendanceApp({ onLogout }) {
     outTime: null,
   }));
   const lastRunningTaskRef = useRef(null);
-  const taskTimeMapRef = useRef({});
 
   const workLogs = logsByTab[activeTab] || [];
   const loadingTasks = !logsByTab[activeTab];
@@ -418,45 +557,25 @@ export default function AttendanceApp({ onLogout }) {
       return t;
     });
 
-  /* ===== WORKED TODAY TRACKING ===== */
-  useEffect(() => {
-    Object.values(logsByTab).forEach((list) => {
-      (list || []).forEach((t) => {
-        const s = Number(t.total_time_taken ?? t.total_seconds ?? 0);
-        if (s > (taskTimeMapRef.current[t.id] || 0)) {
-          taskTimeMapRef.current[t.id] = s;
-        }
-      });
-    });
-  }, [logsByTab]);
-
-  if (runningTask) {
-    const liveSec = getLiveSeconds(runningTask);
-    if (liveSec > (taskTimeMapRef.current[runningTask.id] || 0)) {
-      taskTimeMapRef.current[runningTask.id] = liveSec;
-    }
-  }
-
-  const sumOfAllTasks = Object.values(taskTimeMapRef.current).reduce(
-    (sum, val) => sum + val,
-    0
+  /* ===== WORKED TODAY (LIVE TIME + COMPLETED SESSIONS OF TODAY) ===== */
+  const calculatedTodaySeconds = calculateTodayWorkedSeconds(
+    logsByTab,
+    runningTask
   );
 
-  const todayKey = `worked_today_${todayDate()}`;
+  const todayKey = `worked_today_${getTodayDateStringIST()}`;
 
+  // Store clean calculation in localStorage
   useEffect(() => {
-    if (sumOfAllTasks > 0) {
-      const saved = Number(localStorage.getItem(todayKey) || 0);
-      if (sumOfAllTasks > saved) {
-        localStorage.setItem(todayKey, String(sumOfAllTasks));
-      }
+    if (calculatedTodaySeconds > 0) {
+      localStorage.setItem(todayKey, String(calculatedTodaySeconds));
     }
-  }, [sumOfAllTasks, todayKey]);
+  }, [calculatedTodaySeconds, todayKey]);
 
-  const totalTodaySeconds = Math.max(
-    sumOfAllTasks,
-    Number(localStorage.getItem(todayKey) || 0)
-  );
+  const hasLoadedAnyTab = Object.keys(logsByTab).length > 0;
+  const totalTodaySeconds = hasLoadedAnyTab
+    ? calculatedTodaySeconds
+    : Number(localStorage.getItem(todayKey) || 0);
 
   /* ===== SEND WORKLOG ID TO ELECTRON ===== */
   useEffect(() => {
