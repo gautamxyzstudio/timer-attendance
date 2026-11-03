@@ -174,8 +174,8 @@ const isLunchBreak = () => {
     new Date().toLocaleString("en-US", { timeZone: "Asia/Kolkata" })
   );
   const hour = now.getHours();
-  // lunch break: 2 PM – 3 PM 
-  return (hour >= 19 && hour < 20);
+  // lunch break: 2 PM – 3 PM (14:00 - 15:00 IST)
+  return hour >= 14 && hour < 15;
 };
 
 const normalizeWorkLogItem = (item) => {
@@ -295,6 +295,7 @@ export default function AttendanceApp({ onLogout }) {
     outTime: null,
   }));
   const lastRunningTaskRef = useRef(null);
+  const pendingRunningTaskRef = useRef(null);
 
   const workLogs = logsByTab[activeTab] || [];
   const loadingTasks = !logsByTab[activeTab];
@@ -371,12 +372,35 @@ export default function AttendanceApp({ onLogout }) {
 
         const normalizedLogs = raw.map(normalizeWorkLogItem);
 
+        syncMetaFromLogs(normalizedLogs);
+
+        // If a task start/stop action is pending, guard optimistic running state
+        if (pendingRunningTaskRef.current) {
+          if (pendingRunningTaskRef.current === "STOPPED") {
+            setLogsByTab((prev) => ({
+              ...prev,
+              [activeTab]: normalizedLogs.map((t) => ({
+                ...t,
+                is_running: false,
+              })),
+            }));
+          } else {
+            const targetId = pendingRunningTaskRef.current;
+            setLogsByTab((prev) => ({
+              ...prev,
+              [activeTab]: normalizedLogs.map((t) => ({
+                ...t,
+                is_running: t.id === targetId || t.task_id === targetId,
+              })),
+            }));
+          }
+          return;
+        }
+
         setLogsByTab((prev) => ({
           ...prev,
           [activeTab]: normalizedLogs,
         }));
-
-        syncMetaFromLogs(normalizedLogs);
 
         if (activeTab === "in-progress") {
           const running = normalizedLogs.find((t) => t.is_running);
@@ -440,10 +464,17 @@ export default function AttendanceApp({ onLogout }) {
   /* ===== SYNC FROM BACKEND (10s) ===== */
   useEffect(() => {
     const interval = setInterval(async () => {
+      // Don't run background sync while user is actively switching/stopping a task
+      if (pendingRunningTaskRef.current) return;
+
       try {
         const res = await api.get("/work-logs/today", {
           params: { status: activeTab },
         });
+
+        // Re-check after async fetch
+        if (pendingRunningTaskRef.current) return;
+
         const raw = Array.isArray(res.data?.work_log)
           ? res.data.work_log
           : res.data?.work_log
@@ -501,7 +532,7 @@ export default function AttendanceApp({ onLogout }) {
     }, 10000);
 
     return () => clearInterval(interval);
-  }, [activeTab, runningTaskState?.is_running]);
+  }, [activeTab]);
 
   const firstLog = workLogs?.[0];
   const isCheckedIn = attendanceState.hasCheckedIn;
@@ -509,8 +540,7 @@ export default function AttendanceApp({ onLogout }) {
   const isAttendancePaused = attendanceState.isAttendancePaused;
 
   /* ===== RUNNING TASK & VISIBLE TASKS ===== */
-  const runningTask =
-    runningTaskState || (workLogs || []).find((t) => t.is_running);
+  const runningTask = runningTaskState;
   const runningSeconds = runningTask ? getLiveSeconds(runningTask) : 0;
 
   const visibleTasks = (workLogs || [])
@@ -539,10 +569,12 @@ export default function AttendanceApp({ onLogout }) {
       return s === activeTab;
     })
     .map((t) => {
-      if (
+      const isThisRunning = Boolean(
         runningTask &&
         (t.id === runningTask.id || t.task_id === runningTask.id)
-      ) {
+      );
+
+      if (isThisRunning) {
         return {
           ...t,
           is_running: true,
@@ -554,6 +586,20 @@ export default function AttendanceApp({ onLogout }) {
           },
         };
       }
+
+      if (t.is_running) {
+        return {
+          ...t,
+          is_running: false,
+          last_started_at: null,
+          task: {
+            ...t.task,
+            is_running: false,
+            last_started_at: null,
+          },
+        };
+      }
+
       return t;
     });
 
@@ -602,6 +648,7 @@ export default function AttendanceApp({ onLogout }) {
       console.log("🛑 Electron requested FORCE STOP");
       const currentRunning = runningTask;
 
+      pendingRunningTaskRef.current = "STOPPED";
       setRunningTaskState(null);
       setWorkLogs((prev) =>
         (prev || []).map((t) =>
@@ -630,7 +677,11 @@ export default function AttendanceApp({ onLogout }) {
           });
         } catch (err) {
           console.error("❌ Backend stop failed (force-stop)", err);
+        } finally {
+          pendingRunningTaskRef.current = null;
         }
+      } else {
+        pendingRunningTaskRef.current = null;
       }
 
       window.electronAPI?.setTaskRunning(false);
@@ -660,6 +711,7 @@ export default function AttendanceApp({ onLogout }) {
       const now = new Date().toISOString();
 
       if (task) {
+        pendingRunningTaskRef.current = task.id;
         const runningObj = {
           ...task,
           is_running: true,
@@ -681,8 +733,43 @@ export default function AttendanceApp({ onLogout }) {
         await api.post("/work-logs/start-timer", {
           workLogId: targetId,
         });
+
+        const res = await api.get("/work-logs/today", {
+          params: { status: "in-progress" },
+        });
+        const raw = Array.isArray(res.data?.work_log)
+          ? res.data.work_log
+          : res.data?.work_log
+          ? [res.data.work_log]
+          : [];
+        const normalized = raw.map(normalizeWorkLogItem);
+
+        if (pendingRunningTaskRef.current === targetId) {
+          const fresh = normalized.find(
+            (t) => t.id === targetId || t.task_id === targetId
+          );
+          if (fresh) {
+            setRunningTaskState({
+              ...fresh,
+              is_running: true,
+              last_started_at: fresh.last_started_at || now,
+            });
+          }
+          setLogsByTab((prev) => ({
+            ...prev,
+            "in-progress": normalized.map((t) => ({
+              ...t,
+              is_running: t.id === targetId || t.task_id === targetId,
+            })),
+          }));
+          syncMetaFromLogs(normalized);
+        }
       } catch (err) {
         console.error("❌ Resume failed", err);
+      } finally {
+        if (pendingRunningTaskRef.current === targetId) {
+          pendingRunningTaskRef.current = null;
+        }
       }
 
       window.electronAPI?.setTaskRunning(true);
@@ -711,6 +798,7 @@ export default function AttendanceApp({ onLogout }) {
         console.log(
           "🥪 Lunch break active: stopping timer in frontend (backend stopped via cron)"
         );
+        pendingRunningTaskRef.current = "STOPPED";
         setRunningTaskState(null);
         window.electronAPI?.setTaskRunning(false);
 
@@ -756,6 +844,8 @@ export default function AttendanceApp({ onLogout }) {
           syncMetaFromLogs(normalized);
         } catch (err) {
           console.error("Lunch break backend sync failed", err);
+        } finally {
+          pendingRunningTaskRef.current = null;
         }
       }
     };
@@ -779,7 +869,7 @@ export default function AttendanceApp({ onLogout }) {
     }
 
     const previousLogs = workLogs;
-    const previousRunning = runningTask;
+    const previousRunning = runningTaskState;
     const now = new Date().toISOString();
 
     const runningObj = {
@@ -794,29 +884,58 @@ export default function AttendanceApp({ onLogout }) {
       },
     };
 
+    // 🔒 Lock: prevents any background sync or in-flight GET from overriding running state
+    pendingRunningTaskRef.current = task.id;
+
+    // 1️⃣ Immediately set running state on frontend
     setRunningTaskState(runningObj);
     window.electronAPI?.setTaskRunning(true);
 
+    // 2️⃣ Optimistically update work logs: stop previous task with session saved, start new task
     setWorkLogs((prev) =>
       (prev || []).map((t) => {
-        if (t.is_running && t.id !== task.id) {
+        if (t.id === task.id || t.task_id === task.id) {
+          return runningObj;
+        }
+
+        if (t.is_running) {
+          const liveSec = getLiveSeconds(t);
+          const newSession = t.last_started_at
+            ? {
+                started_at: t.last_started_at,
+                stopped_at: now,
+                duration_seconds: Math.max(
+                  0,
+                  Math.floor(
+                    (new Date(now).getTime() -
+                      new Date(t.last_started_at).getTime()) /
+                      1000
+                  )
+                ),
+              }
+            : null;
+          const prevSessions = Array.isArray(t.work_sessions)
+            ? t.work_sessions
+            : [];
+          const updatedSessions = newSession
+            ? [...prevSessions, newSession]
+            : prevSessions;
+
           return {
             ...t,
             is_running: false,
-            total_seconds: getLiveSeconds(t),
-            time_spent: getLiveSeconds(t),
+            total_seconds: liveSec,
+            time_spent: liveSec,
             last_started_at: null,
+            work_sessions: updatedSessions,
             task: {
               ...t.task,
               is_running: false,
-              total_seconds: getLiveSeconds(t),
+              total_seconds: liveSec,
               last_started_at: null,
+              work_sessions: updatedSessions,
             },
           };
-        }
-
-        if (t.id === task.id) {
-          return runningObj;
         }
 
         return t;
@@ -824,57 +943,153 @@ export default function AttendanceApp({ onLogout }) {
     );
 
     try {
+      // 3️⃣ Hit start timer API in background
       await api.post("/work-logs/start-timer", {
         workLogId: task.id,
       });
+
+      // 4️⃣ Fetch fresh data from backend now that timer started
+      const res = await api.get("/work-logs/today", {
+        params: { status: "in-progress" },
+      });
+
+      const raw = Array.isArray(res.data?.work_log)
+        ? res.data.work_log
+        : res.data?.work_log
+        ? [res.data.work_log]
+        : [];
+      const normalized = raw.map(normalizeWorkLogItem);
+
+      // Verify user hasn't switched to another task in the meantime
+      if (pendingRunningTaskRef.current === task.id) {
+        const freshRunning = normalized.find(
+          (t) => t.id === task.id || t.task_id === task.id || t.is_running
+        );
+        if (freshRunning) {
+          const finalRunning = {
+            ...freshRunning,
+            is_running: true,
+            last_started_at: freshRunning.last_started_at || now,
+          };
+          setRunningTaskState(finalRunning);
+        }
+
+        setLogsByTab((prev) => ({
+          ...prev,
+          "in-progress": normalized.map((t) => ({
+            ...t,
+            is_running: t.id === task.id || t.task_id === task.id,
+          })),
+        }));
+        syncMetaFromLogs(normalized);
+      }
     } catch (err) {
       console.error("❌ Start failed → rollback", err);
-      setRunningTaskState(previousRunning);
-      setWorkLogs(previousLogs);
-      window.electronAPI?.setTaskRunning(Boolean(previousRunning));
-      alert("Failed to start task. Please try again.");
+      if (pendingRunningTaskRef.current === task.id) {
+        setRunningTaskState(previousRunning);
+        setWorkLogs(previousLogs);
+        window.electronAPI?.setTaskRunning(Boolean(previousRunning));
+        alert("Failed to start task. Please try again.");
+      }
+    } finally {
+      if (pendingRunningTaskRef.current === task.id) {
+        pendingRunningTaskRef.current = null;
+      }
     }
   };
 
   const stopTask = async () => {
-    const taskToStop = runningTask;
+    const taskToStop = runningTaskState;
     if (!taskToStop) return;
     const runningId = taskToStop.id;
     const previousLogs = workLogs;
-    const previousRunning = runningTask;
+    const previousRunning = runningTaskState;
+    const now = new Date().toISOString();
+
+    // 🔒 Lock: background sync will NOT resurrect this stopped task
+    pendingRunningTaskRef.current = "STOPPED";
 
     setRunningTaskState(null);
     window.electronAPI?.setTaskRunning(false);
 
     setWorkLogs((prev) =>
-      (prev || []).map((t) =>
-        t.is_running || t.id === runningId
-          ? {
-              ...t,
+      (prev || []).map((t) => {
+        if (t.is_running || t.id === runningId || t.task_id === runningId) {
+          const liveSec = getLiveSeconds(t);
+          const newSession = t.last_started_at
+            ? {
+                started_at: t.last_started_at,
+                stopped_at: now,
+                duration_seconds: Math.max(
+                  0,
+                  Math.floor(
+                    (new Date(now).getTime() -
+                      new Date(t.last_started_at).getTime()) /
+                      1000
+                  )
+                ),
+              }
+            : null;
+          const prevSessions = Array.isArray(t.work_sessions)
+            ? t.work_sessions
+            : [];
+          const updatedSessions = newSession
+            ? [...prevSessions, newSession]
+            : prevSessions;
+
+          return {
+            ...t,
+            is_running: false,
+            total_seconds: liveSec,
+            time_spent: liveSec,
+            last_started_at: null,
+            work_sessions: updatedSessions,
+            task: {
+              ...t.task,
               is_running: false,
-              total_seconds: getLiveSeconds(t),
-              time_spent: getLiveSeconds(t),
+              total_seconds: liveSec,
               last_started_at: null,
-              task: {
-                ...t.task,
-                is_running: false,
-                total_seconds: getLiveSeconds(t),
-                last_started_at: null,
-              },
-            }
-          : t
-      )
+              work_sessions: updatedSessions,
+            },
+          };
+        }
+        return t;
+      })
     );
 
     try {
       await api.post("/work-logs/stop-timer", {
         workLogId: runningId,
       });
+
+      const res = await api.get("/work-logs/today", {
+        params: { status: "in-progress" },
+      });
+      const raw = Array.isArray(res.data?.work_log)
+        ? res.data.work_log
+        : res.data?.work_log
+        ? [res.data.work_log]
+        : [];
+      const normalized = raw.map(normalizeWorkLogItem);
+
+      if (pendingRunningTaskRef.current === "STOPPED") {
+        setLogsByTab((prev) => ({
+          ...prev,
+          "in-progress": normalized.map((t) => ({ ...t, is_running: false })),
+        }));
+        syncMetaFromLogs(normalized);
+      }
     } catch (err) {
       console.error("❌ Stop failed → rollback", err);
-      setRunningTaskState(previousRunning);
-      setWorkLogs(previousLogs);
-      window.electronAPI?.setTaskRunning(Boolean(previousRunning));
+      if (pendingRunningTaskRef.current === "STOPPED") {
+        setRunningTaskState(previousRunning);
+        setWorkLogs(previousLogs);
+        window.electronAPI?.setTaskRunning(Boolean(previousRunning));
+      }
+    } finally {
+      if (pendingRunningTaskRef.current === "STOPPED") {
+        pendingRunningTaskRef.current = null;
+      }
     }
   };
 
