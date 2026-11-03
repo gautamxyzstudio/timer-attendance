@@ -3,7 +3,7 @@ const {
   BrowserWindow,
   ipcMain,
   powerMonitor,
-  screen
+  screen,
 } = require("electron");
 
 const path = require("path");
@@ -19,7 +19,7 @@ autoUpdater.logger.transports.file.level = "info";
 autoUpdater.setFeedURL({
   provider: "github",
   owner: "gautamxyzstudio",
-  repo: "timer-attendance"
+  repo: "timer-attendance",
 });
 
 autoUpdater.allowPrerelease = false;
@@ -37,7 +37,6 @@ function sendUpdaterStatus(status, data = null) {
   sendToRenderer("updater-status", { status, data });
 }
 
-
 /* ================= APP NAME ================= */
 
 app.setName("Time Tracker");
@@ -52,7 +51,6 @@ if (!app.requestSingleInstanceLock()) {
 
 app.disableHardwareAcceleration();
 const isDev = !app.isPackaged;
-
 
 /* ================= STATE ================= */
 autoUpdater.autoDownload = true;
@@ -89,7 +87,7 @@ function stopTasksOnExit(reason) {
   if (mainWindow && !mainWindow.isDestroyed()) {
     try {
       mainWindow.webContents.send("force-stop-tasks");
-    } catch { }
+    } catch {}
   }
 }
 
@@ -97,7 +95,7 @@ function stopTasksOnExit(reason) {
 
 function createMainWindow() {
   mainWindow = new BrowserWindow({
-    width: 710,
+    width: 790,
     height: 530,
     resizable: false,
     maximizable: false,
@@ -107,12 +105,12 @@ function createMainWindow() {
     icon: path.join(__dirname, "../assets/icons/icon.png"),
     webPreferences: {
       preload: path.join(__dirname, "preload.cjs"),
-      contextIsolation: true
-    }
+      contextIsolation: true,
+    },  
   });
 
-  mainWindow.setMinimumSize(710, 530);
-  mainWindow.setMaximumSize(710, 530);
+  mainWindow.setMinimumSize(790, 530);
+  mainWindow.setMaximumSize(790, 530);
 
   if (isDev) {
     mainWindow.loadURL("http://localhost:5173");
@@ -147,7 +145,7 @@ function centerWindow(win) {
 
   win.setPosition(
     Math.round(x + (width - bounds.width) / 2),
-    Math.round(y + (height - bounds.height) / 2)
+    Math.round(y + (height - bounds.height) / 2),
   );
 }
 
@@ -176,8 +174,8 @@ function openIdleCheckPopup() {
     icon: path.join(__dirname, "../assets/icons/icon.png"),
     webPreferences: {
       preload: path.join(__dirname, "preload.cjs"),
-      contextIsolation: true
-    }
+      contextIsolation: true,
+    },
   });
 
   popupWindow.loadFile(path.join(__dirname, "popup.html"));
@@ -232,8 +230,8 @@ function openIdleCounterPopup() {
     icon: path.join(__dirname, "../assets/icons/icon.png"),
     webPreferences: {
       preload: path.join(__dirname, "preload.cjs"),
-      contextIsolation: true
-    }
+      contextIsolation: true,
+    },
   });
 
   idleCounterWindow.loadFile(path.join(__dirname, "idle-check.html"));
@@ -277,11 +275,9 @@ ipcMain.on("popup-response", (_, payload) => {
   }
 });
 
-
 /* ================= AUTO UPDATE ================= */
 
 ipcMain.on("check-for-updates", () => {
-
   // DEV MODE
   if (!app.isPackaged) {
     console.log("Dev mode — updater skipped");
@@ -294,7 +290,6 @@ ipcMain.on("check-for-updates", () => {
   console.log("Manual update check triggered");
   autoUpdater.checkForUpdates();
 });
-
 
 ipcMain.on("download-update", () => {
   autoUpdater.downloadUpdate();
@@ -336,8 +331,6 @@ autoUpdater.on("error", (err) => {
   console.log("updater error:", err);
   sendUpdaterStatus("error", err?.message);
 });
-
-
 
 /* ================= IDLE MONITOR ================= */
 
@@ -398,8 +391,6 @@ app.whenReady().then(() => {
       RANDOM_IDLE_TRIGGER = null;
     }
   }, 5000);
-
-
 });
 
 // 🔁 Windows restart / shutdown / logout
@@ -424,11 +415,3 @@ process.on("SIGINT", () => {
 app.on("window-all-closed", () => {
   if (process.platform !== "darwin") app.quit();
 });
-
-
-
-
-
-
-
-

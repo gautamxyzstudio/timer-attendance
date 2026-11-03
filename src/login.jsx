@@ -7,75 +7,81 @@ export default function Login({ onLogin }) {
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [toast, setToast] = useState("");
+  const [loading, setLoading] = useState(false);
 
   const [rememberMe, setRememberMe] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
 
-  const handleLogin = async () => {
+  const handleLogin = async (e) => {
+    if (e?.preventDefault) e.preventDefault();
+    if (loading) return;
+
+    if (!email.trim() || !password.trim()) {
+      setToast("Please enter both email and password");
+      setTimeout(() => setToast(""), 4000);
+      return;
+    }
+
     setError(""); // clear previous error
+    setLoading(true);
 
     try {
       const user = await login(email, password);
       onLogin(user);
     } catch (err) {
-  const message =
-    err?.response?.data?.error?.message ??
-    "Invalid email or password";
+      const message =
+        err?.response?.data?.error?.message ??
+        "Invalid email or password";
 
-  setError(message);     // optional (can remove later)
-  setToast(message);     // ✅ show toast
+      setError(message); // optional (can remove later)
+      setToast(message); // ✅ show toast
 
-  setTimeout(() => {
-    setToast("");
-  }, 4000); 
-}
+      setTimeout(() => {
+        setToast("");
+      }, 4000);
+    } finally {
+      setLoading(false);
+    }
   };
-
 
   return (
     <div className="w-screen h-screen bg-gray-300 flex items-center justify-center">
-
       {toast && (
-  <div className="fixed top-6 right-6 z-50">
-    <div className="relative flex gap-3 bg-white rounded-xl shadow-[0_8px_30px_rgba(0,0,0,0.12)] border border-red-200 px-4 py-3 min-w-[320px]">
+        <div className="fixed top-6 right-6 z-50">
+          <div className="relative flex gap-3 bg-white rounded-xl shadow-[0_8px_30px_rgba(0,0,0,0.12)] border border-red-200 px-4 py-3 min-w-[320px]">
+            {/* Accent bar */}
+            <div className="absolute left-0 top-0 h-full w-1.5 bg-red-500 rounded-l-xl" />
 
-      {/* Accent bar */}
-      <div className="absolute left-0 top-0 h-full w-1.5 bg-red-500 rounded-l-xl" />
+            {/* Icon */}
+            <div className="mt-0.5 text-red-500 text-lg">⚠️</div>
 
-      {/* Icon */}
-      <div className="mt-0.5 text-red-500 text-lg">
-        ⚠️
-      </div>
+            {/* Content */}
+            <div className="flex-1">
+              <p className="text-sm font-semibold text-gray-900 leading-tight">
+                Login failed
+              </p>
+              <p className="text-sm text-gray-600 mt-0.5">{toast}</p>
+            </div>
 
-      {/* Content */}
-      <div className="flex-1">
-        <p className="text-sm font-semibold text-gray-900 leading-tight">
-          Login failed
-        </p>
-        <p className="text-sm text-gray-600 mt-0.5">
-          {toast}
-        </p>
-      </div>
+            {/* Close */}
+            <button
+              onClick={() => setToast("")}
+              className="text-gray-400 hover:text-gray-700 transition"
+            >
+              ✕
+            </button>
+          </div>
+        </div>
+      )}
 
-      {/* Close */}
-      <button
-        onClick={() => setToast("")}
-        className="text-gray-400 hover:text-gray-700 transition"
+      <div
+        style={{ width: "680px", height: "480px" }}
+        className="flex items-center justify-center bg-[#F3F4F6] "
       >
-        ✕
-      </button>
-    </div>
-  </div>
-)}
-
-      
-      <div style={{ width: "680px", height: "480px" }}
-        className="flex items-center justify-center bg-[#F3F4F6] ">
         <div
           className="bg-white rounded-md shadow-[0_4px_12px_rgba(0,0,0,0.12)] box-border"
           style={{ width: "372px", height: "352px", padding: "24px 28px" }}
         >
-
           {/* Logo */}
           <div className="flex justify-center mb-3">
             <img src={logo} alt="X Studio" className="h-6" />
@@ -94,29 +100,33 @@ export default function Login({ onLogin }) {
             <input
               type="email"
               placeholder="Enter your email"
-              className="w-full h-10 px-4 border border-[#D6D4D2] rounded-xl bg-[#F7F7F6] text-sm outline-none"
+              className="w-full h-10 px-4 border border-[#D6D4D2] rounded-xl bg-[#F7F7F6] text-sm outline-none disabled:opacity-60"
               value={email}
+              disabled={loading}
               onChange={(e) => setEmail(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && handleLogin(e)}
             />
           </div>
 
           {/* Password */}
           <div className="mb-4">
-
             <div className="relative">
               <input
                 type={showPassword ? "text" : "password"}
                 placeholder="Password"
-                className="w-full h-10 px-4 pr-10 border border-[#D6D4D2] rounded-xl bg-[#F7F7F6] text-sm outline-none"
+                className="w-full h-10 px-4 pr-10 border border-[#D6D4D2] rounded-xl bg-[#F7F7F6] text-sm outline-none disabled:opacity-60"
                 value={password}
+                disabled={loading}
                 onChange={(e) => setPassword(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && handleLogin(e)}
               />
 
               {/* Eye icon */}
               <button
                 type="button"
+                disabled={loading}
                 onClick={() => setShowPassword(!showPassword)}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-[#797571] hover:text-black"
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-[#797571] hover:text-black cursor-pointer"
               >
                 {showPassword ? (
                   /* Eye Off */
@@ -175,6 +185,7 @@ export default function Login({ onLogin }) {
               type="checkbox"
               id="rememberMe"
               checked={rememberMe}
+              disabled={loading}
               onChange={(e) => setRememberMe(e.target.checked)}
               className="mr-2"
             />
@@ -187,12 +198,38 @@ export default function Login({ onLogin }) {
           <div className="flex justify-center">
             <button
               onClick={handleLogin}
-              className="w-80 h-10 bg-[#E47A0E] text-white text-sm font-medium rounded-xl hover:bg-[#d96f0c] transition"
+              disabled={loading}
+              className="w-80 h-10 bg-[#E47A0E] text-white text-sm font-medium rounded-xl hover:bg-[#d96f0c] transition flex items-center justify-center gap-2 disabled:opacity-60 disabled:cursor-not-allowed cursor-pointer"
             >
-              Login
+              {loading ? (
+                <>
+                  <svg
+                    className="animate-spin h-4 w-4 text-white"
+                    xmlns="http://www.w3.org/2000/svg"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                  >
+                    <circle
+                      className="opacity-25"
+                      cx="12"
+                      cy="12"
+                      r="10"
+                      stroke="currentColor"
+                      strokeWidth="4"
+                    ></circle>
+                    <path
+                      className="opacity-75"
+                      fill="currentColor"
+                      d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"
+                    ></path>
+                  </svg>
+                  <span>Logging in...</span>
+                </>
+              ) : (
+                "Login"
+              )}
             </button>
           </div>
-
         </div>
       </div>
     </div>

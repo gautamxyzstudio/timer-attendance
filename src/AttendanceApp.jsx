@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState } from "react";
 import api from "./api";
-import AddTask from "./addTask";
 import Sidebar from "./Sidebar";
 import { logout } from "./auth";
 
@@ -16,17 +15,21 @@ const formatHMS = (seconds = 0) => {
 };
 
 const getLiveSeconds = (task) => {
-  // 🚫 HARD STOP: frontend must NEVER invent time
-  if (!task.is_running) return task.time_spent || 0;
+  const baseSeconds =
+    task.total_time_taken ??
+    task.total_seconds ??
+    task.time_spent ??
+    task.task?.total_seconds ??
+    0;
 
-  if (!task.last_started_at) return task.time_spent || 0;
+  if (!task.is_running) return baseSeconds;
+  if (!task.last_started_at) return baseSeconds;
 
-  return (
-    (task.time_spent || 0) +
-    Math.floor((Date.now() - new Date(task.last_started_at)) / 1000)
+  const elapsed = Math.floor(
+    (Date.now() - new Date(task.last_started_at).getTime()) / 1000
   );
+  return baseSeconds + (elapsed > 0 ? elapsed : 0);
 };
-
 
 const todayDate = () => new Date().toISOString().slice(0, 10);
 
@@ -35,9 +38,80 @@ const isLunchBreak = () => {
     new Date().toLocaleString("en-US", { timeZone: "Asia/Kolkata" })
   );
   const hour = now.getHours();
-  return hour >= 14 && hour < 15; // 2 PM – 3 PM
+  // Production lunch break: 2 PM – 3 PM (hour 14). Also includes hour 18 for testing.
+  return (hour >= 14 && hour < 15);
 };
 
+const normalizeWorkLogItem = (item) => {
+  const taskObj = item.task || {};
+  const taskItem = item.task_item || {};
+  const isRunning = Boolean(taskObj.is_running ?? item.is_running);
+  const totalSeconds = Number(
+    item.total_time_taken ?? taskObj.total_seconds ?? taskObj.time_spent ?? 0
+  );
+  const workSessions = Array.isArray(taskObj.work_sessions)
+    ? taskObj.work_sessions
+    : [];
+
+  const rawStatus = (
+    taskItem.status ||
+    item.status ||
+    taskObj.status ||
+    ""
+  ).toLowerCase();
+
+  let status = rawStatus;
+  if (!status) {
+    if (isRunning || totalSeconds > 0 || workSessions.length > 0) {
+      status = "in-progress";
+    } else {
+      status = "planned";
+    }
+  }
+
+  return {
+    ...item,
+    id: item.id,
+    work_log_id: item.id,
+    task_id: taskItem.id || taskObj.id || taskObj.task_id || item.id,
+    task_item: taskItem,
+    title:
+      taskObj.title ||
+      taskObj.task_title ||
+      item.task_title ||
+      "Untitled Task",
+    description: taskObj.description || "",
+    is_running: isRunning,
+    total_time_taken: totalSeconds,
+    total_seconds: totalSeconds,
+    time_spent: totalSeconds,
+    work_sessions: workSessions,
+    last_started_at: isRunning
+      ? taskObj.last_started_at || item.last_started_at
+      : null,
+    status,
+    user: item.user,
+    has_attendance: item.has_attendance,
+    out: item.out,
+    is_checked_in: item.is_checked_in,
+    task: {
+      ...taskObj,
+      title:
+        taskObj.title ||
+        taskObj.task_title ||
+        item.task_title ||
+        "Untitled Task",
+      is_running: isRunning,
+      total_time_taken: totalSeconds,
+      total_seconds: totalSeconds,
+      work_sessions: workSessions,
+      last_started_at: isRunning
+        ? taskObj.last_started_at || item.last_started_at
+        : null,
+      status,
+    },
+  };
+};
 
 /* ===== USER CACHE ===== */
 const USER_CACHE_KEY = "attendance_user";
@@ -48,9 +122,9 @@ const saveUserToCache = (user) => {
   localStorage.setItem(
     USER_CACHE_KEY,
     JSON.stringify({
-      name: user.user_detial?.name || "",
-      username: user.username || "",
-      photo: user.user_detial?.Photo?.[0]?.url || "",
+      name: user.name || user.user_detial?.name || user.username || "",
+      username: user.username || user.name || "",
+      photo: user.photo || user.user_detial?.Photo?.[0]?.url || "",
     })
   );
 };
@@ -63,18 +137,40 @@ const getUserFromCache = () => {
   }
 };
 
-
 /* ================= COMPONENT ================= */
 
 export default function AttendanceApp({ onLogout }) {
-  const [todayLog, setTodayLog] = useState(null);
-  const [historyTasks, setHistoryTasks] = useState([]);
-  const [activeTab, setActiveTab] = useState("today");
+  const [logsByTab, setLogsByTab] = useState({});
+  const [activeTab, setActiveTab] = useState("in-progress");
+  const [runningTaskState, setRunningTaskState] = useState(null);
   const [, forceTick] = useState(0);
   const [cachedUser, setCachedUser] = useState(() => getUserFromCache());
+  const [attendanceState, setAttendanceState] = useState(() => ({
+    hasCheckedIn: true,
+    hasAttendance: true,
+    isCheckedIn: true,
+    isCheckedOut: false,
+    isAttendancePaused: false,
+    inTime: null,
+    outTime: null,
+  }));
   const lastRunningTaskRef = useRef(null);
+  const taskTimeMapRef = useRef({});
 
-  const initRef = useRef(false);
+  const workLogs = logsByTab[activeTab] || [];
+  const loadingTasks = !logsByTab[activeTab];
+
+  const setWorkLogs = (updater) => {
+    setLogsByTab((prev) => {
+      const currentList = prev[activeTab] || [];
+      const updatedList =
+        typeof updater === "function" ? updater(currentList) : updater;
+      return {
+        ...prev,
+        [activeTab]: updatedList,
+      };
+    });
+  };
 
   /* ===== LIVE TIMER TICK ===== */
   useEffect(() => {
@@ -82,155 +178,302 @@ export default function AttendanceApp({ onLogout }) {
     return () => clearInterval(i);
   }, []);
 
-  // in lunch task stop
+  const syncMetaFromLogs = (normalizedLogs) => {
+    if (!normalizedLogs || normalizedLogs.length === 0) return;
+
+    const firstUser = normalizedLogs.find((l) => l.user)?.user;
+    if (firstUser) {
+      saveUserToCache(firstUser);
+      setCachedUser(getUserFromCache());
+    }
+
+    const logWithAtt =
+      normalizedLogs.find(
+        (l) =>
+          l.has_attendance !== undefined ||
+          l.is_checked_in !== undefined ||
+          l.out !== undefined
+      ) || normalizedLogs[0];
+
+    if (logWithAtt) {
+      setAttendanceState({
+        hasCheckedIn: Boolean(logWithAtt.has_attendance ?? true),
+        hasAttendance: Boolean(logWithAtt.has_attendance ?? true),
+        isCheckedIn: Boolean(logWithAtt.is_checked_in ?? true),
+        isCheckedOut: Boolean(logWithAtt.out),
+        isAttendancePaused: Boolean(
+          (logWithAtt.has_attendance ?? true) &&
+            !logWithAtt.out &&
+            logWithAtt.is_checked_in === false
+        ),
+        inTime: logWithAtt.createdAt,
+        outTime: logWithAtt.out,
+      });
+    }
+  };
+
+  /* ===== LOAD TASKS FOR CURRENT TAB ===== */
   useEffect(() => {
-    const interval = setInterval(async () => {
-      if (!isLunchBreak()) return;
+    let isCancelled = false;
 
-      // if UI already shows no running task → do nothing
-      const hasRunning = todayLog?.tasks?.some(t => t.is_running);
-      if (!hasRunning) return;
-
+    const loadTabLogs = async () => {
       try {
-        const res = await api.get("/work-logs/today");
-        const backendLog = res.data.work_log;
-
-        if (!backendLog) return;
-
-        // 🔥 FORCE frontend to TRUST backend
-        setTodayLog({
-          ...backendLog,
-          tasks: (backendLog.tasks || []).map(t => ({
-            ...t,
-            // ❗ if backend stopped it, frontend must stop it
-            last_started_at: t.is_running ? t.last_started_at : null,
-          })),
+        const res = await api.get("/work-logs/today", {
+          params: { status: activeTab },
         });
 
-        // 🔴 also stop Electron timer
-        window.electronAPI?.setTaskRunning(false);
-      } catch (err) {
-        console.error("Lunch break sync failed", err);
-      }
-    }, 10_000); // ⬅ faster sync (10s is ideal)
+        if (isCancelled) return;
 
-    return () => clearInterval(interval);
-  }, [todayLog?.id]);
+        const raw = Array.isArray(res.data?.work_log)
+          ? res.data.work_log
+          : res.data?.work_log
+          ? [res.data.work_log]
+          : [];
 
+        const normalizedLogs = raw.map(normalizeWorkLogItem);
 
-  /* ===== LOAD DATA ===== */
-  useEffect(() => {
-    if (initRef.current) return;
-    initRef.current = true;
+        setLogsByTab((prev) => ({
+          ...prev,
+          [activeTab]: normalizedLogs,
+        }));
 
-    const loadToday = async () => {
-      try {
-        const res = await api.get("/work-logs/today");
-        const log = res.data.work_log;
+        syncMetaFromLogs(normalizedLogs);
 
-        if (log) {
-          // 🔥 NORMALIZE TASK STATE (IMPORTANT)
-          const normalizedLog = {
-            ...log,
-            tasks: (log.tasks || []).map(t => ({
-              ...t,
-              // 👇 if backend says stopped, frontend MUST stop
-              last_started_at: t.is_running ? t.last_started_at : null,
-            })),
-          };
-
-          setTodayLog(normalizedLog);
-
-          if (log?.user) {
-            saveUserToCache(log.user);
-            setCachedUser(getUserFromCache());
+        if (activeTab === "in-progress") {
+          const running = normalizedLogs.find((t) => t.is_running);
+          if (running && !isLunchBreak()) {
+            setRunningTaskState(running);
+            window.electronAPI?.setTaskRunning(true);
+          } else {
+            setRunningTaskState(null);
+            window.electronAPI?.setTaskRunning(false);
           }
-
-          // 🔴 Sync Electron immediately
-          const hasRunning = normalizedLog.tasks?.some(t => t.is_running);
-          window.electronAPI?.setTaskRunning(Boolean(hasRunning));
         }
       } catch (err) {
-        console.error("Failed to load today worklog", err);
+        if (!isCancelled) {
+          console.error(`Failed to load ${activeTab} worklog`, err);
+          setLogsByTab((prev) => ({
+            ...prev,
+            [activeTab]: prev[activeTab] || [],
+          }));
+        }
       }
     };
 
-    const loadCompleted = async () => {
-      try {
-        const res = await api.get("/work-logs/completed");
-        setHistoryTasks(Array.isArray(res.data) ? res.data : []);
-      } catch (err) {
-        console.error("Failed to load completed tasks", err);
+    loadTabLogs();
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [activeTab]);
+
+  /* ===== PREFETCH OTHER TABS ON MOUNT ===== */
+  useEffect(() => {
+    const prefetchOtherTabs = async () => {
+      const otherTabs = ["planned", "completed", "blocked"];
+      for (const tab of otherTabs) {
+        try {
+          const res = await api.get("/work-logs/today", {
+            params: { status: tab },
+          });
+          const raw = Array.isArray(res.data?.work_log)
+            ? res.data.work_log
+            : res.data?.work_log
+            ? [res.data.work_log]
+            : [];
+          const normalized = raw.map(normalizeWorkLogItem);
+          setLogsByTab((prev) => {
+            if (prev[tab]) return prev;
+            return {
+              ...prev,
+              [tab]: normalized,
+            };
+          });
+        } catch (e) {
+          // prefetch is best-effort
+        }
       }
     };
 
-    loadToday();
-    loadCompleted();
+    prefetchOtherTabs();
   }, []);
 
+  /* ===== SYNC FROM BACKEND (10s) ===== */
+  useEffect(() => {
+    const interval = setInterval(async () => {
+      try {
+        const res = await api.get("/work-logs/today", {
+          params: { status: activeTab },
+        });
+        const raw = Array.isArray(res.data?.work_log)
+          ? res.data.work_log
+          : res.data?.work_log
+          ? [res.data.work_log]
+          : [];
 
-  const isCheckedIn = Boolean(todayLog?.id);
-  const isCheckedOut = Boolean(todayLog?.out);
+        const normalized = raw.map(normalizeWorkLogItem);
+        syncMetaFromLogs(normalized);
 
-  const isAttendancePaused =
-    isCheckedIn &&
-    !isCheckedOut &&
-    !todayLog?.is_checked_in;
+        if (activeTab === "in-progress") {
+          const running = normalized.find((t) => t.is_running);
+          if (running && !isLunchBreak()) {
+            setRunningTaskState(running);
+            window.electronAPI?.setTaskRunning(true);
+          } else {
+            setRunningTaskState(null);
+            window.electronAPI?.setTaskRunning(false);
+          }
+        } else if (isLunchBreak()) {
+          setRunningTaskState(null);
+          window.electronAPI?.setTaskRunning(false);
+        }
 
+        setLogsByTab((prev) => {
+          const currentLogs = prev[activeTab];
+          if (!currentLogs) return { ...prev, [activeTab]: normalized };
+
+          const prevSummary = JSON.stringify(
+            currentLogs.map((t) => ({
+              id: t.id,
+              running: t.is_running,
+              time: t.total_seconds,
+              last_started_at: t.last_started_at,
+              is_checked_in: t.is_checked_in,
+              out: t.out,
+            }))
+          );
+          const nextSummary = JSON.stringify(
+            normalized.map((t) => ({
+              id: t.id,
+              running: t.is_running,
+              time: t.total_seconds,
+              last_started_at: t.last_started_at,
+              is_checked_in: t.is_checked_in,
+              out: t.out,
+            }))
+          );
+
+          if (prevSummary === nextSummary) return prev;
+          return { ...prev, [activeTab]: normalized };
+        });
+      } catch (err) {
+        console.error("🔴 Worklog sync failed", err);
+      }
+    }, 10000);
+
+    return () => clearInterval(interval);
+  }, [activeTab, runningTaskState?.is_running]);
+
+  const firstLog = workLogs?.[0];
+  const isCheckedIn = attendanceState.hasCheckedIn;
+  const isCheckedOut = attendanceState.isCheckedOut;
+  const isAttendancePaused = attendanceState.isAttendancePaused;
+
+  /* ===== RUNNING TASK & VISIBLE TASKS ===== */
+  const runningTask =
+    runningTaskState || (workLogs || []).find((t) => t.is_running);
+  const runningSeconds = runningTask ? getLiveSeconds(runningTask) : 0;
+
+  const visibleTasks = (workLogs || [])
+    .filter((t) => {
+      const s = (
+        t.task_item?.status ||
+        t.status ||
+        t.task?.status ||
+        ""
+      ).toLowerCase();
+
+      if (!s) return true;
+
+      if (activeTab === "in-progress") {
+        if (s === "in-progress") return true;
+        if (s === "planned" || s === "completed" || s === "blocked") return false;
+        return t.is_running || t.total_seconds > 0;
+      }
+      if (activeTab === "planned") {
+        if (s === "planned") return true;
+        if (s === "in-progress" || s === "completed" || s === "blocked") return false;
+        return true;
+      }
+      if (activeTab === "completed") return s === "completed";
+      if (activeTab === "blocked") return s === "blocked";
+      return s === activeTab;
+    })
+    .map((t) => {
+      if (
+        runningTask &&
+        (t.id === runningTask.id || t.task_id === runningTask.id)
+      ) {
+        return {
+          ...t,
+          is_running: true,
+          last_started_at: runningTask.last_started_at,
+          task: {
+            ...t.task,
+            is_running: true,
+            last_started_at: runningTask.last_started_at,
+          },
+        };
+      }
+      return t;
+    });
+
+  /* ===== WORKED TODAY TRACKING ===== */
+  useEffect(() => {
+    Object.values(logsByTab).forEach((list) => {
+      (list || []).forEach((t) => {
+        const s = Number(t.total_time_taken ?? t.total_seconds ?? 0);
+        if (s > (taskTimeMapRef.current[t.id] || 0)) {
+          taskTimeMapRef.current[t.id] = s;
+        }
+      });
+    });
+  }, [logsByTab]);
+
+  if (runningTask) {
+    const liveSec = getLiveSeconds(runningTask);
+    if (liveSec > (taskTimeMapRef.current[runningTask.id] || 0)) {
+      taskTimeMapRef.current[runningTask.id] = liveSec;
+    }
+  }
+
+  const sumOfAllTasks = Object.values(taskTimeMapRef.current).reduce(
+    (sum, val) => sum + val,
+    0
+  );
+
+  const todayKey = `worked_today_${todayDate()}`;
+
+  useEffect(() => {
+    if (sumOfAllTasks > 0) {
+      const saved = Number(localStorage.getItem(todayKey) || 0);
+      if (sumOfAllTasks > saved) {
+        localStorage.setItem(todayKey, String(sumOfAllTasks));
+      }
+    }
+  }, [sumOfAllTasks, todayKey]);
+
+  const totalTodaySeconds = Math.max(
+    sumOfAllTasks,
+    Number(localStorage.getItem(todayKey) || 0)
+  );
 
   /* ===== SEND WORKLOG ID TO ELECTRON ===== */
   useEffect(() => {
-    if (todayLog?.id) {
-      console.log("📤 Sending workLogId to Electron:", todayLog.id);
-      window.electronAPI?.setWorkLogId(todayLog.id);
+    const activeId = runningTask?.id || firstLog?.id;
+    if (activeId) {
+      console.log("📤 Sending workLogId to Electron:", activeId);
+      window.electronAPI?.setWorkLogId(activeId);
     }
-  }, [todayLog?.id]);
-
-
-  /* ===== FILTERS (FIXED) ===== */
-
-  const today = todayDate();
-
-  // 🟠 TODAY TAB → only today's IN-PROGRESS
-  const todayTasks = (todayLog?.tasks || []).filter(
-    (t) =>
-      t.status === "in-progress" &&
-      t.createdAt?.slice(0, 10) === today
-  );
-
-
-  // 🟢 COMPLETED TAB → only today's COMPLETED
-  const completedTasks = (todayLog?.tasks || []).filter(
-    (t) =>
-      t.status === "completed" &&
-      t.createdAt?.slice(0, 10) === today
-  );
-
-
-  const visibleTasks =
-    activeTab === "today" ? todayTasks : completedTasks;
-
-
-  /* ===== RUNNING TASK ===== */
-  const runningTask = todayTasks.find((t) => t.is_running);
-
-  const runningSeconds = runningTask ? getLiveSeconds(runningTask) : 0;
-
-  const totalTodaySeconds = (todayLog?.tasks || [])
-    .filter((t) => t.createdAt?.slice(0, 10) === today)
-    .reduce((sum, t) => sum + getLiveSeconds(t), 0);
+  }, [runningTask?.id, firstLog?.id]);
 
   /* ===== SYNC RUNNING TASK WITH ELECTRON ===== */
   useEffect(() => {
     if (!window.electronAPI?.setTaskRunning) return;
-
     const isRunning = Boolean(runningTask);
-
     console.log("📤 Sending TASK_RUNNING to Electron:", isRunning);
-
     window.electronAPI.setTaskRunning(isRunning);
   }, [runningTask]);
-
 
   /* ===== FORCE STOP TASKS FROM ELECTRON ===== */
   useEffect(() => {
@@ -238,36 +481,39 @@ export default function AttendanceApp({ onLogout }) {
 
     const handleForceStop = async () => {
       console.log("🛑 Electron requested FORCE STOP");
+      const currentRunning = runningTask;
 
-      // 1️⃣ Optimistically stop in UI
-      setTodayLog((prev) => {
-        if (!prev) return prev;
-
-        return {
-          ...prev,
-          tasks: prev.tasks.map((t) =>
-            t.is_running
-              ? {
+      setRunningTaskState(null);
+      setWorkLogs((prev) =>
+        (prev || []).map((t) =>
+          t.is_running
+            ? {
                 ...t,
                 is_running: false,
+                total_seconds: getLiveSeconds(t),
                 time_spent: getLiveSeconds(t),
                 last_started_at: null,
+                task: {
+                  ...t.task,
+                  is_running: false,
+                  total_seconds: getLiveSeconds(t),
+                  last_started_at: null,
+                },
               }
-              : t
-          ),
-        };
-      });
+            : t
+        )
+      );
 
-      // 2️⃣ Stop backend timer (authoritative)
-      try {
-        await api.post("/work-logs/stop-timer", {
-          workLogId: todayLog?.id,
-        });
-      } catch (err) {
-        console.error("❌ Backend stop failed (force-stop)", err);
+      if (currentRunning?.id) {
+        try {
+          await api.post("/work-logs/stop-timer", {
+            workLogId: currentRunning.id,
+          });
+        } catch (err) {
+          console.error("❌ Backend stop failed (force-stop)", err);
+        }
       }
 
-      // 3️⃣ Sync Electron state
       window.electronAPI?.setTaskRunning(false);
     };
 
@@ -276,7 +522,7 @@ export default function AttendanceApp({ onLogout }) {
     return () => {
       window.electronAPI.removeForceStopTasks?.(handleForceStop);
     };
-  }, [todayLog]);
+  }, [runningTask]);
 
   /* ===== RESUME TASKS FROM ELECTRON ===== */
   useEffect(() => {
@@ -285,40 +531,41 @@ export default function AttendanceApp({ onLogout }) {
     const handleResume = async () => {
       console.log("▶️ Electron requested RESUME TASK");
 
-      const taskId = lastRunningTaskRef.current;
-      if (!taskId || !todayLog) return;
+      const targetId = lastRunningTaskRef.current;
+      if (!targetId || !workLogs) return;
 
-      const task = todayLog.tasks.find(t => t.task_id === taskId);
-      if (!task) return;
+      const task = (workLogs || []).find(
+        (t) => t.id === targetId || t.task_id === targetId
+      );
 
       const now = new Date().toISOString();
 
-      // 1️⃣ Optimistic UI resume
-      setTodayLog((prev) => ({
-        ...prev,
-        tasks: prev.tasks.map((t) =>
-          t.task_id === taskId
-            ? {
-              ...t,
-              is_running: true,
-              status: "in-progress",
-              last_started_at: now,
-            }
-            : t
-        ),
-      }));
+      if (task) {
+        const runningObj = {
+          ...task,
+          is_running: true,
+          status: "in-progress",
+          last_started_at: now,
+          task: {
+            ...task.task,
+            is_running: true,
+            last_started_at: now,
+          },
+        };
+        setRunningTaskState(runningObj);
+        setWorkLogs((prev) =>
+          (prev || []).map((t) => (t.id === task.id ? runningObj : t))
+        );
+      }
 
-      // 2️⃣ Backend resume
       try {
         await api.post("/work-logs/start-timer", {
-          workLogId: todayLog.id,
-          task_id: taskId,
+          workLogId: targetId,
         });
       } catch (err) {
         console.error("❌ Resume failed", err);
       }
 
-      // 3️⃣ Sync Electron state
       window.electronAPI?.setTaskRunning(true);
     };
 
@@ -327,62 +574,81 @@ export default function AttendanceApp({ onLogout }) {
     return () => {
       window.electronAPI.removeResumeTasks?.(handleResume);
     };
-  }, [todayLog]);
+  }, [workLogs]);
 
   useEffect(() => {
     if (runningTask) {
-      lastRunningTaskRef.current = runningTask.task_id;
-      console.log("💾 Saved last running task:", runningTask.task_id);
+      lastRunningTaskRef.current = runningTask.id;
+      console.log("💾 Saved last running task:", runningTask.id);
     }
   }, [runningTask]);
 
-
-  /* ===== SYNC CHECKOUT FROM BACKEND ===== */
+  /* ===== LUNCH BREAK TASK STOP (FRONTEND ONLY - BACKEND HANDLED BY CRON) ===== */
   useEffect(() => {
-    if (!todayLog?.id) return;
+    const handleLunchBreak = async () => {
+      if (!isLunchBreak()) return;
 
-    const interval = setInterval(async () => {
-      try {
-        const res = await api.get("/work-logs/today");
-        const backendLog = res.data.work_log;
+      if (runningTask) {
+        console.log(
+          "🥪 Lunch break active: stopping timer in frontend (backend stopped via cron)"
+        );
+        setRunningTaskState(null);
+        window.electronAPI?.setTaskRunning(false);
 
-        if (!backendLog) return;
-
-        // 🔥 ALWAYS trust backend
-        setTodayLog(prev => {
-          // prevent useless re-render
-          if (JSON.stringify(prev?.tasks) === JSON.stringify(backendLog.tasks)) {
-            return prev;
-          }
-
-          return {
-            ...backendLog,
-            tasks: (backendLog.tasks || []).map(t => ({
-              ...t,
-              last_started_at: t.is_running ? t.last_started_at : null,
-            })),
-          };
+        // Mark running tasks as stopped across all cached tabs
+        setLogsByTab((prev) => {
+          const updated = {};
+          Object.keys(prev).forEach((tab) => {
+            updated[tab] = (prev[tab] || []).map((t) =>
+              t.is_running
+                ? {
+                    ...t,
+                    is_running: false,
+                    last_started_at: null,
+                    total_seconds: getLiveSeconds(t),
+                    task: {
+                      ...t.task,
+                      is_running: false,
+                      last_started_at: null,
+                      total_seconds: getLiveSeconds(t),
+                    },
+                  }
+                : t
+            );
+          });
+          return updated;
         });
 
-        // 🔴 Electron must follow backend
-        const hasRunning = backendLog.tasks?.some(t => t.is_running);
-        window.electronAPI?.setTaskRunning(Boolean(hasRunning));
-      } catch (err) {
-        console.error("🔴 Worklog sync failed", err);
+        // Silently sync fresh work logs from backend (already stopped by cron)
+        try {
+          const res = await api.get("/work-logs/today", {
+            params: { status: activeTab },
+          });
+          const raw = Array.isArray(res.data?.work_log)
+            ? res.data.work_log
+            : res.data?.work_log
+            ? [res.data.work_log]
+            : [];
+          const normalized = raw.map(normalizeWorkLogItem);
+          setLogsByTab((prev) => ({
+            ...prev,
+            [activeTab]: normalized,
+          }));
+          syncMetaFromLogs(normalized);
+        } catch (err) {
+          console.error("Lunch break backend sync failed", err);
+        }
       }
-    }, 3000); // ⬅ 3 seconds (ideal)
+    };
 
+    handleLunchBreak();
+    const interval = setInterval(handleLunchBreak, 2000);
     return () => clearInterval(interval);
-  }, [todayLog?.id]);
+  }, [runningTask, activeTab]);
 
-
-  if (!todayLog) return null;
-
-
-  /* ===== ACTIONS (FIXED UI UPDATE) ===== */
+  /* ===== ACTIONS ===== */
 
   const startTask = async (task) => {
-
     if (isLunchBreak()) {
       alert("Lunch break from 2–3 PM. Tasks cannot be started.");
       return;
@@ -392,167 +658,150 @@ export default function AttendanceApp({ onLogout }) {
       alert("Attendance paused. Please check in again to resume tasks.");
       return;
     }
-    const previousLog = todayLog;
+
+    const previousLogs = workLogs;
+    const previousRunning = runningTask;
     const now = new Date().toISOString();
 
-    // 🚀 Optimistic UI update (CORRECT)
-    setTodayLog((prev) => ({
-      ...prev,
-      tasks: prev.tasks.map((t) => {
-        // 🔴 Previously running task → SAVE ITS TIME
-        if (t.is_running && t.task_id !== task.task_id) {
+    const runningObj = {
+      ...task,
+      is_running: true,
+      status: "in-progress",
+      last_started_at: now,
+      task: {
+        ...task.task,
+        is_running: true,
+        last_started_at: now,
+      },
+    };
+
+    setRunningTaskState(runningObj);
+    window.electronAPI?.setTaskRunning(true);
+
+    setWorkLogs((prev) =>
+      (prev || []).map((t) => {
+        if (t.is_running && t.id !== task.id) {
           return {
             ...t,
             is_running: false,
+            total_seconds: getLiveSeconds(t),
             time_spent: getLiveSeconds(t),
             last_started_at: null,
+            task: {
+              ...t.task,
+              is_running: false,
+              total_seconds: getLiveSeconds(t),
+              last_started_at: null,
+            },
           };
         }
 
-        // 🟢 New task → START
-        if (t.task_id === task.task_id) {
-          return {
-            ...t,
-            is_running: true,
-            status: "in-progress",
-            last_started_at: now,
-          };
+        if (t.id === task.id) {
+          return runningObj;
         }
 
         return t;
-      }),
-    }));
+      })
+    );
 
     try {
       await api.post("/work-logs/start-timer", {
-        workLogId: todayLog.id,
-        task_id: task.task_id,
+        workLogId: task.id,
       });
     } catch (err) {
       console.error("❌ Start failed → rollback", err);
-      setTodayLog(previousLog);
+      setRunningTaskState(previousRunning);
+      setWorkLogs(previousLogs);
+      window.electronAPI?.setTaskRunning(Boolean(previousRunning));
       alert("Failed to start task. Please try again.");
     }
   };
 
   const stopTask = async () => {
-    const previousLog = todayLog;
+    const taskToStop = runningTask;
+    if (!taskToStop) return;
+    const runningId = taskToStop.id;
+    const previousLogs = workLogs;
+    const previousRunning = runningTask;
 
-    // 🚀 Optimistic UI update
-    setTodayLog((prev) => ({
-      ...prev,
-      tasks: prev.tasks.map((t) =>
-        t.is_running
-          ? {
-            ...t,
-            is_running: false,
-            time_spent: getLiveSeconds(t),
-            last_started_at: null,
-          }
-          : t
-      ),
-    }));
-
-    // 🔴 TELL ELECTRON IMMEDIATELY
+    setRunningTaskState(null);
     window.electronAPI?.setTaskRunning(false);
+
+    setWorkLogs((prev) =>
+      (prev || []).map((t) =>
+        t.is_running || t.id === runningId
+          ? {
+              ...t,
+              is_running: false,
+              total_seconds: getLiveSeconds(t),
+              time_spent: getLiveSeconds(t),
+              last_started_at: null,
+              task: {
+                ...t.task,
+                is_running: false,
+                total_seconds: getLiveSeconds(t),
+                last_started_at: null,
+              },
+            }
+          : t
+      )
+    );
 
     try {
       await api.post("/work-logs/stop-timer", {
-        workLogId: todayLog.id,
+        workLogId: runningId,
       });
     } catch (err) {
       console.error("❌ Stop failed → rollback", err);
-      setTodayLog(previousLog);
-    }
-  };
-
-
-  const completeTask = async (task) => {
-    // 🔒 Optimistic UI update (instant)
-    setTodayLog((prev) => ({
-      ...prev,
-      tasks: prev.tasks.map((t) =>
-        t.task_id === task.task_id
-          ? { ...t, status: "completed", is_running: false }
-          : t
-      ),
-    }));
-
-    // ⏸ Stop timer if running
-    if (task.is_running) {
-      await api.post("/work-logs/stop-timer", {
-        workLogId: todayLog.id,
-      });
-    }
-
-    // ✅ Persist to backend
-    const res = await api.put(
-      `/work-logs/${todayLog.id}/update-task`,
-      {
-        data: {
-          task_id: task.task_id,
-          status: "completed",
-        },
-      }
-    );
-
-    // 🔁 Final sync (authoritative state)
-    if (res?.data) {
-      setTodayLog(res.data);
-
-      api.get("/work-logs/completed").then((r) =>
-        setHistoryTasks(Array.isArray(r.data) ? r.data : [])
-      );
+      setRunningTaskState(previousRunning);
+      setWorkLogs(previousLogs);
+      window.electronAPI?.setTaskRunning(Boolean(previousRunning));
     }
   };
 
   const handleLogout = async () => {
     try {
-      // 🔴 If any task is running, stop it first
-      const hasRunningTask = todayLog?.tasks?.some(t => t.is_running);
-
-      if (hasRunningTask) {
+      if (runningTask?.id) {
         await api.post("/work-logs/stop-timer", {
-          workLogId: todayLog.id,
+          workLogId: runningTask.id,
         });
         window.electronAPI?.setTaskRunning(false);
       }
     } catch (err) {
       console.error("❌ Failed to stop running task on logout", err);
     } finally {
-      // 🧹 Clear local cache
-      localStorage.removeItem("attendance_user");
-
-      // 🔐 Logout (token/session clear)
+      localStorage.removeItem(USER_CACHE_KEY);
       logout();
-
       onLogout();
     }
   };
 
-
-  const displayUser = todayLog?.user ? {
-    name: todayLog.user.user_detial?.name,
-    username: todayLog.user.username,
-    photo: todayLog.user.user_detial?.Photo?.[0]?.url,
-  }
+  const firstUser = (workLogs || []).find((l) => l.user)?.user;
+  const displayUser = firstUser
+    ? {
+        name:
+          firstUser.name ||
+          firstUser.user_detial?.name ||
+          firstUser.username,
+        photo: firstUser.photo || firstUser.user_detial?.Photo?.[0]?.url,
+      }
     : cachedUser;
 
-
   return (
-    <div className="min-h-screen flex items-center justify-center bg-[#f3f3f3]">
-      <div style={{ width: 680, height: 480 }}>
-        <div className="bg-[#F7F7F7] rounded-2xl shadow h-full p-4 flex flex-col">
-
+    <div className="min-h-screen flex items-start justify-center bg-[#f3f3f3]">
+      <div style={{ width: "100%", height: 490 }}>
+        <div className=" h-full p-4 flex flex-col space-y-3">
           {/* ===== BLACK BAR ===== */}
           <div
-            className="bg-[#3E3A36] rounded-2xl px-6 flex items-center justify-between text-white mb-3"
-            style={{ width: 648, height: 60 }}
+            className="bg-[#3E3A36] rounded-2xl px-6 flex items-center justify-between text-white"
+            style={{width:"100%", height: 60 }}
           >
             <div>
               <div className="text-xs text-gray-300">Task</div>
               <div className="text-sm">
-                {runningTask?.task_title || "No task running"}
+                {runningTask?.title ||
+                  runningTask?.task_title ||
+                  "No task running"}
               </div>
             </div>
 
@@ -564,7 +813,8 @@ export default function AttendanceApp({ onLogout }) {
               {runningTask && (
                 <button
                   onClick={stopTask}
-                  className="w-8 h-8 rounded-full bg-[#FF7300] flex items-center justify-center"
+                  className="w-8 h-8 rounded-full bg-[#FF7300] flex items-center justify-center cursor-pointer"
+                  title="Pause task"
                 >
                   ❚❚
                 </button>
@@ -573,7 +823,7 @@ export default function AttendanceApp({ onLogout }) {
           </div>
 
           {/* ===== USER STRIP ===== */}
-          <div className="bg-white rounded-xl px-4 py-3 flex justify-between items-center mb-3 shadow-sm">
+          <div className="bg-white rounded-xl px-4 py-3 flex justify-between items-center shadow-sm">
             <div className="flex items-center gap-3">
               {/* PROFILE PHOTO */}
               <div className="w-9 h-9 rounded-full overflow-hidden bg-gray-300 flex items-center justify-center">
@@ -585,23 +835,28 @@ export default function AttendanceApp({ onLogout }) {
                   />
                 ) : (
                   <span className="text-xs font-semibold text-gray-600">
-                    {(displayUser?.name ||
+                    {(
+                      displayUser?.name ||
                       displayUser?.username ||
-                      "US")
+                      "US"
+                    )
                       .slice(0, 2)
                       .toUpperCase()}
                   </span>
                 )}
               </div>
 
-
               {/* NAME + LOGOUT */}
               <div>
                 <div className="text-sm font-medium">
-                  {displayUser?.name || displayUser?.username ||
+                  {displayUser?.name ||
+                    displayUser?.username ||
                     "Employee"}
                 </div>
-                <div onClick={handleLogout} className="text-xs text-gray-400 cursor-pointer hover:underline">
+                <div
+                  onClick={handleLogout}
+                  className="text-xs text-gray-400 cursor-pointer hover:underline"
+                >
                   Logout
                 </div>
               </div>
@@ -609,7 +864,7 @@ export default function AttendanceApp({ onLogout }) {
 
             <div className="text-[13px]">
               Worked Today:{" "}
-              <span className=" font-semibold">
+              <span className="font-semibold">
                 {formatHMS(totalTodaySeconds)}
               </span>
             </div>
@@ -623,53 +878,14 @@ export default function AttendanceApp({ onLogout }) {
             />
 
             {/* RIGHT SIDE */}
-            <div style={{ width: 515 }} className="flex-1 overflow-hidden pt-2 bg-white rounded-xl shadow-sm">
-
-              {/* ADD TASK */}
-              {activeTab === "today" && isCheckedIn && !isCheckedOut && (
-                <div className="mb-3 px-3" style={{ width: 491, height: 36 }}>
-                  <AddTask
-                    workLogId={todayLog.id}
-                    onTaskAdded={(task, tempId) =>
-                      setTodayLog((prev) => {
-                        // ❌ rollback temp task
-                        if (!task && tempId) {
-                          return {
-                            ...prev,
-                            tasks: prev.tasks.filter(t => t.task_id !== tempId),
-                          };
-                        }
-
-                        // 🔁 replace temp with real task
-                        if (tempId) {
-                          const tasks = prev.tasks.map(t =>
-                            t.task_id === tempId ? task : t
-                          );
-                          return { ...prev, tasks };
-                        }
-
-                        // ➕ normal add
-                        return {
-                          ...prev,
-                          tasks: [...prev.tasks, task],
-                        };
-                      })
-                    }
-                  />
-
-                </div>
-              )}
-
-              {/* ORANGE DIVIDER */}
-              {activeTab === "today" && isCheckedIn && !isCheckedOut && (
-                <div className="w-[490] h-px bg-[#FF7300] mb-2" />
-              )}
-
-              {/* TABLE */}
-              <div className="overflow-auto py-2 mx-3 no-scrollbar" style={{ height: 260 }}>
-
+            <div
+              style={{ width: 515 }}
+              className="flex-1 overflow-hidden p-3 bg-white rounded-xl shadow-sm flex flex-col"
+            >
+              {/* TABLE CONTAINER */}
+              <div className="overflow-auto py-1 no-scrollbar flex-1">
                 {!isCheckedIn ? (
-                  <div className="flex flex-col items-center justify-center h-full text-center">
+                  <div className="flex flex-col items-center justify-center h-full text-center py-10">
                     <div className="text-lg font-semibold text-[#FF7300]">
                       You have not checked in today
                     </div>
@@ -678,152 +894,194 @@ export default function AttendanceApp({ onLogout }) {
                     </div>
                   </div>
                 ) : isCheckedOut ? (
-                  /* ✅ CHECKED OUT */
-                  <div className="flex flex-col items-center justify-center h-full text-center">
-                    <div className="text-lg font-semibold text-[#FF7300]">
-                      ✅ All done for today
+                  <div className="flex flex-col items-center justify-center h-full text-center py-6">
+                    <div className="w-12 h-12 rounded-full bg-green-100 text-green-600 flex items-center justify-center text-xl mb-2 font-bold">
+                      ✓
                     </div>
-                    <div className="text-sm text-gray-500 mt-2">
+                    <div className="text-lg font-semibold text-[#3E3A36]">
+                      All done for today!
+                    </div>
+                    <div className="text-xs text-gray-500 mt-0.5 mb-3">
                       See you tomorrow 👋
                     </div>
+
+                    <div className="bg-[#F7F7F7] rounded-xl px-6 py-3 border border-gray-200 text-center min-w-[240px]">
+                      <div className="text-xs text-gray-400">Total Worked Today</div>
+                      <div className="text-xl font-semibold font-mono text-[#FF7300] mt-0.5">
+                        {formatHMS(totalTodaySeconds)}
+                      </div>
+                      {(attendanceState.inTime || firstLog?.createdAt) && (
+                        <div className="text-[11px] text-gray-400 mt-2 flex gap-3 justify-center">
+                          <span>
+                            In:{" "}
+                            {new Date(
+                              attendanceState.inTime || firstLog.createdAt
+                            ).toLocaleTimeString([], {
+                              hour: "2-digit",
+                              minute: "2-digit",
+                            })}
+                          </span>
+                          {(attendanceState.outTime || firstLog?.out) && (
+                            <span>
+                              • Out:{" "}
+                              {new Date(
+                                attendanceState.outTime || firstLog.out
+                              ).toLocaleTimeString([], {
+                                hour: "2-digit",
+                                minute: "2-digit",
+                              })}
+                            </span>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                ) : loadingTasks ? (
+                  <div className="flex flex-col items-center justify-center h-full text-center py-16">
+                    <div className="w-7 h-7 border-2 border-[#FF7300] border-t-transparent rounded-full animate-spin mb-3" />
+                    <div className="text-xs text-gray-400 font-medium">
+                      Loading tasks...
+                    </div>
+                  </div>
+                ) : visibleTasks.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center h-full text-center py-12">
+                    <div className="text-sm font-medium text-gray-500 mb-1">
+                      {activeTab === "in-progress"
+                        ? "No tasks currently in progress"
+                        : activeTab === "planned"
+                        ? "No planned tasks found"
+                        : activeTab === "completed"
+                        ? "No completed tasks found"
+                        : "No blocked tasks found"}
+                    </div>
+
+                    <p className="text-xs text-gray-400 mb-3">
+                      {activeTab === "in-progress"
+                        ? "Start a task from your Planned list to begin tracking time"
+                        : activeTab === "planned"
+                        ? "Check your in-progress list to view active tasks"
+                        : activeTab === "completed"
+                        ? "Completed tasks will appear here"
+                        : "Blocked tasks will appear here"}
+                    </p>
+
+                    {activeTab === "in-progress" ? (
+                      <button
+                        onClick={() => setActiveTab("planned")}
+                        className="px-3 py-1.5 bg-[#FF7300] text-white rounded-lg text-xs font-medium hover:bg-[#e06600] transition cursor-pointer"
+                      >
+                        View Planned Tasks
+                      </button>
+                    ) : (
+                      <button
+                        onClick={() => setActiveTab("in-progress")}
+                        className="px-3 py-1.5 bg-[#FF7300] text-white rounded-lg text-xs font-medium hover:bg-[#e06600] transition cursor-pointer"
+                      >
+                        View In-Progress Tasks
+                      </button>
+                    )}
                   </div>
                 ) : (
-
                   <table className="w-full bg-white rounded-xl text-sm">
                     <thead className="bg-gray-50">
                       <tr className="rounded-xl bg-[#F7F7F7]">
-                        {/* Done */}
-                        <th className="p-2 w-10"></th>
+                        {/* Task */}
+                        <th className="p-2 text-left text-md font-normal">
+                          Task
+                        </th>
 
-                        {/* Task (ALWAYS visible) */}
-                        <th className="p-2 text-left text-md font-normal">Task</th>
+                        {/* Time / Total Time Taken */}
+                        <th
+                          className={`p-2 text-md font-normal ${
+                            activeTab === "in-progress"
+                              ? "text-left w-28"
+                              : "text-right pr-6 whitespace-nowrap"
+                          }`}
+                        >
+                          {activeTab === "in-progress"
+                            ? "Time"
+                            : "Total Time Taken"}
+                        </th>
 
-                        {/* Completed-only columns */}
-                        {activeTab === "completed" && (
-                          <th className="p-2 text-md font-normal">Project</th>
-                        )}
-
-                        {activeTab === "completed" && (
-                          <th className="p-2 text-md font-normal">Status</th>
-                        )}
-
-                        {/* Time (ALWAYS visible) */}
-                        <th className="p-2 text-md text-left font-normal">Time</th>
-
-                        {/* Action (TODAY only) */}
-                        {activeTab !== "completed" && (
-                          <th className="p-2 text-md font-normal">Action</th>
+                        {/* Action - only in In-Progress */}
+                        {activeTab === "in-progress" && (
+                          <th className="p-2 text-md font-normal text-center w-20">
+                            Action
+                          </th>
                         )}
                       </tr>
-
                     </thead>
 
                     <tbody className="text-sm">
                       {visibleTasks.map((task) => (
                         <tr
-                          key={`${task.task_id}-${task.createdAt}`}
-                          className="border-b h-12"
+                          key={`${task.id}-${task.title}`}
+                          className="border-b"
                         >
-                          <td className="p-2">
-                            <div className="flex items-center justify-center h-full">
-                              {task.status === "completed" ? (
-                                // ✅ Completed (green)
-                                <div className="w-4 h-4 bg-green-500 rounded flex items-center justify-center">
-                                  <span className="text-white text-[10px] font-bold leading-none">
-                                    ✓
-                                  </span>
-                                </div>
-                              ) : (
-                                // ⬜ In-progress (custom empty box)
-                                <button
-                                  disabled={task.task_key === "DAILY_MEETING"}
-                                  onClick={() => completeTask(task)}
-                                  className={`w-4 h-4 border-2 rounded-sm flex items-center justify-center
-    ${task.task_key === "DAILY_MEETING"
-                                      ? "border-gray-300 cursor-not-allowed opacity-40"
-                                      : "border-gray-500 cursor-pointer"
-                                    }`}
-                                  aria-label="Complete task"
-                                />
-
-                              )}
-                            </div>
+                          <td
+                          title={task.title}
+                            className={`p-2 text-sm ${
+                              task.is_running
+                                ? "text-green-500 font-medium"
+                                : "text-gray-800"
+                            }`}
+                          >
+                           
+                           <span className="line-clamp-1">{task.title}</span> 
                           </td>
-
-
 
                           <td
-                            className={`p-2 text-sm ${task.is_running ? "text-green-500" : "text-gray-800"
-                              }`}
+                            className={`p-2 font-mono ${
+                              activeTab === "in-progress"
+                                ? "w-28 text-left"
+                                : "text-right pr-6"
+                            }`}
                           >
-                            {task.task_title}
-                          </td>
-                          {activeTab === "completed" && (
-                            <td className="p-2 text-13px[]">
-                              {task.project?.title || "—"}
-                            </td>
-                          )}
-
-                          {activeTab === "completed" && (
-                            <td className="p-2">
-                              <span
-                                className={`inline-flex items-center justify-center
-        px-2 py-1 pb-2 rounded-lg text-[12px]
-        whitespace-nowrap leading-none
-        ${task.status === "completed"
-                                    ? "bg-green-100 text-green-600"
-                                    : "bg-orange-100 text-orange-600"
-                                  }`}
-                              >
-                                {task.status}
-                              </span>
-                            </td>
-                          )}
-
-
-                          <td className="p-2 font-mono">
                             <span
-                              className={`inline-block px-2 py-1 rounded-md text-sm ${task.is_running
+                              className={`inline-block px-2 py-1 rounded-md text-sm ${
+                                task.is_running
                                 ? "bg-green-100 text-green-500"
                                 : "bg-transparent text-gray-800"
-                                }`}
+                              }`}
                             >
                               {formatHMS(getLiveSeconds(task))}
                             </span>
                           </td>
 
-
-                          {activeTab !== "completed" && (
-                            <td className="p-2 text-center">
+                          {activeTab === "in-progress" && (
+                            <td className="p-2 text-center w-20">
                               {task.is_running ? (
                                 <button
                                   onClick={stopTask}
-                                  className="w-6 h-6 rounded-full bg-[#FF7300] text-white"
+                                  className="w-6 h-6 rounded-full bg-[#FF7300] text-white flex items-center justify-center mx-auto cursor-pointer"
+                                  title="Pause task"
                                 >
                                   ❚❚
                                 </button>
                               ) : (
                                 <button
                                   onClick={() => startTask(task)}
-                                  disabled={isLunchBreak() || isAttendancePaused}
-                                  className={`w-6 h-6 text-gray-50 bg-[#797571] rounded-full ${isLunchBreak() || isAttendancePaused
-                                    ? "opacity-40 cursor-not-allowed"
-                                    : ""
-                                    }`}
+                                  disabled={
+                                    isLunchBreak() || isAttendancePaused
+                                  }
+                                  className={`w-6 h-6 text-gray-50 bg-[#797571] rounded-full flex items-center justify-center mx-auto ${
+                                    isLunchBreak() || isAttendancePaused
+                                      ? "opacity-40 cursor-not-allowed"
+                                      : "hover:bg-[#FF7300] transition cursor-pointer"
+                                  }`}
+                                  title="Start task"
                                 >
                                   ▶
                                 </button>
                               )}
                             </td>
                           )}
-
                         </tr>
                       ))}
                     </tbody>
                   </table>
                 )}
               </div>
-
             </div>
           </div>
         </div>
