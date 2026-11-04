@@ -1,7 +1,14 @@
 import { useEffect, useRef, useState } from "react";
 import api from "./api";
 import Sidebar from "./Sidebar";
-import { logout } from "./auth";
+import {
+  logout,
+  getUser,
+  getUserFromCache,
+  saveUserToCache,
+  fetchUserProfile,
+  USER_CACHE_KEY,
+} from "./auth";
 
 /* ================= HELPERS ================= */
 
@@ -271,30 +278,6 @@ const normalizeWorkLogItem = (item) => {
   };
 };
 
-/* ===== USER CACHE ===== */
-const USER_CACHE_KEY = "attendance_user";
-
-const saveUserToCache = (user) => {
-  if (!user) return;
-
-  localStorage.setItem(
-    USER_CACHE_KEY,
-    JSON.stringify({
-      name: user.name || user.user_detial?.name || user.username || "",
-      username: user.username || user.name || "",
-      photo: user.photo || user.user_detial?.Photo?.[0]?.url || "",
-    })
-  );
-};
-
-const getUserFromCache = () => {
-  try {
-    return JSON.parse(localStorage.getItem(USER_CACHE_KEY));
-  } catch {
-    return null;
-  }
-};
-
 /* ================= COMPONENT ================= */
 
 export default function AttendanceApp({ onLogout }) {
@@ -319,6 +302,22 @@ export default function AttendanceApp({ onLogout }) {
   const isResumingRef = useRef(false);
   const isForceStoppingRef = useRef(false);
 
+  // Fetch full user profile (including photo and name) from /user/:id on mount
+  useEffect(() => {
+    const currentUserId = getUser()?.id || cachedUser?.id;
+    if (currentUserId) {
+      fetchUserProfile(currentUserId)
+        .then((profile) => {
+          if (profile) {
+            setCachedUser(profile);
+          }
+        })
+        .catch((err) => {
+          console.warn("Failed to refresh user profile on mount:", err);
+        });
+    }
+  }, []);
+
   const workLogs = logsByTab[activeTab] || [];
   const loadingTasks = !logsByTab[activeTab];
 
@@ -342,12 +341,6 @@ export default function AttendanceApp({ onLogout }) {
 
   const syncMetaFromLogs = (normalizedLogs) => {
     if (!normalizedLogs || normalizedLogs.length === 0) return;
-
-    const firstUser = normalizedLogs.find((l) => l.user)?.user;
-    if (firstUser) {
-      saveUserToCache(firstUser);
-      setCachedUser(getUserFromCache());
-    }
 
     const logWithAtt =
       normalizedLogs.find(
@@ -1147,16 +1140,7 @@ export default function AttendanceApp({ onLogout }) {
     }
   };
 
-  const firstUser = (workLogs || []).find((l) => l.user)?.user;
-  const displayUser = firstUser
-    ? {
-        name:
-          firstUser.name ||
-          firstUser.user_detial?.name ||
-          firstUser.username,
-        photo: firstUser.photo || firstUser.user_detial?.Photo?.[0]?.url,
-      }
-    : cachedUser;
+  const displayUser = cachedUser || getUser() || {};
 
   return (
     <div className="min-h-screen flex items-start justify-center bg-[#f3f3f3]">
@@ -1200,9 +1184,12 @@ export default function AttendanceApp({ onLogout }) {
               <div className="w-9 h-9 rounded-full overflow-hidden bg-gray-300 flex items-center justify-center">
                 {displayUser?.photo ? (
                   <img
-                    src={displayUser?.photo}
+                    src={displayUser.photo}
                     alt="profile"
                     className="w-full h-full object-cover"
+                    onError={(e) => {
+                      e.currentTarget.style.display = "none";
+                    }}
                   />
                 ) : (
                   <span className="text-xs font-semibold text-gray-600">
