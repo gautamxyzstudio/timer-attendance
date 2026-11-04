@@ -257,20 +257,26 @@ ipcMain.on("popup-response", (_, payload) => {
   const { type, action } = payload;
 
   if (type === "idle-check") {
+    if (!popupWindow || popupWindow.isDestroyed()) return;
     closePopup1();
     if (action === "not-working") {
       TASK_RUNNING = false;
-      mainWindow.webContents.send("force-stop-tasks");
+      mainWindow?.webContents?.send("force-stop-tasks");
     }
   }
 
   if (type === "idle-counter") {
+    if (!idleCounterWindow || idleCounterWindow.isDestroyed()) return;
+    const win = idleCounterWindow;
+    idleCounterWindow = null;
+    try {
+      win.destroy();
+    } catch {}
+
     if (action === "working") {
       TASK_RUNNING = true;
-      mainWindow.webContents.send("resume-tasks");
+      mainWindow?.webContents?.send("resume-tasks");
     }
-    idleCounterWindow?.destroy();
-    idleCounterWindow = null;
     LAST_POPUP_AT = Date.now();
   }
 });

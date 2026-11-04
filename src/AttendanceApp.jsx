@@ -314,6 +314,10 @@ export default function AttendanceApp({ onLogout }) {
   }));
   const lastRunningTaskRef = useRef(null);
   const pendingRunningTaskRef = useRef(null);
+  const runningTaskRef = useRef(null);
+  const workLogsRef = useRef([]);
+  const isResumingRef = useRef(false);
+  const isForceStoppingRef = useRef(false);
 
   const workLogs = logsByTab[activeTab] || [];
   const loadingTasks = !logsByTab[activeTab];
@@ -560,6 +564,8 @@ export default function AttendanceApp({ onLogout }) {
   /* ===== RUNNING TASK & VISIBLE TASKS ===== */
   const runningTask = runningTaskState;
   const runningSeconds = runningTask ? getTaskTodaySeconds(runningTask) : 0;
+  runningTaskRef.current = runningTask;
+  workLogsRef.current = workLogs;
 
   const visibleTasks = (workLogs || [])
     .filter((t) => {
@@ -662,8 +668,13 @@ export default function AttendanceApp({ onLogout }) {
     if (!window.electronAPI?.onForceStopTasks) return;
 
     const handleForceStop = async () => {
+      if (isForceStoppingRef.current) {
+        console.log("⚠️ Force stop already in progress, skipping duplicate call");
+        return;
+      }
+      isForceStoppingRef.current = true;
       console.log("🛑 Electron requested FORCE STOP");
-      const currentRunning = runningTask;
+      const currentRunning = runningTaskRef.current;
 
       pendingRunningTaskRef.current = "STOPPED";
       setRunningTaskState(null);
@@ -687,18 +698,17 @@ export default function AttendanceApp({ onLogout }) {
         )
       );
 
-      if (currentRunning?.id) {
-        try {
+      try {
+        if (currentRunning?.id) {
           await api.post("/work-logs/stop-timer", {
             workLogId: currentRunning.id,
           });
-        } catch (err) {
-          console.error("❌ Backend stop failed (force-stop)", err);
-        } finally {
-          pendingRunningTaskRef.current = null;
         }
-      } else {
+      } catch (err) {
+        console.error("❌ Backend stop failed (force-stop)", err);
+      } finally {
         pendingRunningTaskRef.current = null;
+        isForceStoppingRef.current = false;
       }
 
       window.electronAPI?.setTaskRunning(false);
@@ -707,21 +717,30 @@ export default function AttendanceApp({ onLogout }) {
     window.electronAPI.onForceStopTasks(handleForceStop);
 
     return () => {
-      window.electronAPI.removeForceStopTasks?.(handleForceStop);
+      window.electronAPI.removeForceStopTasks?.();
     };
-  }, [runningTask]);
+  }, []);
 
   /* ===== RESUME TASKS FROM ELECTRON ===== */
   useEffect(() => {
     if (!window.electronAPI?.onResumeTasks) return;
 
     const handleResume = async () => {
+      if (isResumingRef.current) {
+        console.log("⚠️ Resume already in progress, skipping duplicate call");
+        return;
+      }
+      isResumingRef.current = true;
       console.log("▶️ Electron requested RESUME TASK");
 
       const targetId = lastRunningTaskRef.current;
-      if (!targetId || !workLogs) return;
+      const currentLogs = workLogsRef.current || [];
+      if (!targetId || currentLogs.length === 0) {
+        isResumingRef.current = false;
+        return;
+      }
 
-      const task = (workLogs || []).find(
+      const task = currentLogs.find(
         (t) => t.id === targetId || t.task_id === targetId
       );
 
@@ -787,6 +806,7 @@ export default function AttendanceApp({ onLogout }) {
         if (pendingRunningTaskRef.current === targetId) {
           pendingRunningTaskRef.current = null;
         }
+        isResumingRef.current = false;
       }
 
       window.electronAPI?.setTaskRunning(true);
@@ -795,9 +815,9 @@ export default function AttendanceApp({ onLogout }) {
     window.electronAPI.onResumeTasks(handleResume);
 
     return () => {
-      window.electronAPI.removeResumeTasks?.(handleResume);
+      window.electronAPI.removeResumeTasks?.();
     };
-  }, [workLogs]);
+  }, []);
 
   useEffect(() => {
     if (runningTask) {

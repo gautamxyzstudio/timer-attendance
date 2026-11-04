@@ -75,7 +75,10 @@
       el.textContent = new Date(sec * 1000).toISOString().substr(11, 8);
     }, 1000);
 
+    let hasSent = false;
     function working() {
+      if (hasSent) return;
+      hasSent = true;
       clearInterval(timer);
       window.electronAPI.popupResponse({
         type: "idle-counter",
@@ -86,6 +89,8 @@
     }
 
     function notWorking() {
+      if (hasSent) return;
+      hasSent = true;
       clearInterval(timer);
       window.electronAPI.popupResponse({
         type: "idle-counter",

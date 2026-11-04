@@ -103,7 +103,10 @@
       }
     }, 1000);
 
+    let hasSent = false;
     function send(action) {
+      if (hasSent) return;
+      hasSent = true;
       clearInterval(timer);
       window.electronAPI.popupResponse({
         type: "idle-check",

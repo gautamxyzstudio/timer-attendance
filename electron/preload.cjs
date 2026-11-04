@@ -24,18 +24,24 @@ contextBridge.exposeInMainWorld("electronAPI", {
     ipcRenderer.send("popup-response", payload),
 
   /* ================= FORCE STOP ================= */
-  onForceStopTasks: (cb) =>
-    ipcRenderer.on("force-stop-tasks", cb),
+  onForceStopTasks: (cb) => {
+    ipcRenderer.removeAllListeners("force-stop-tasks");
+    ipcRenderer.on("force-stop-tasks", (_event, ...args) => cb(...args));
+  },
 
-  removeForceStopTasks: (cb) =>
-    ipcRenderer.removeListener("force-stop-tasks", cb),
+  removeForceStopTasks: () => {
+    ipcRenderer.removeAllListeners("force-stop-tasks");
+  },
 
   /* ================= RESUME TASK ================= */
-  onResumeTasks: (cb) =>
-    ipcRenderer.on("resume-tasks", cb),
+  onResumeTasks: (cb) => {
+    ipcRenderer.removeAllListeners("resume-tasks");
+    ipcRenderer.on("resume-tasks", (_event, ...args) => cb(...args));
+  },
 
-  removeResumeTasks: (cb) =>
-    ipcRenderer.removeListener("resume-tasks", cb),
+  removeResumeTasks: () => {
+    ipcRenderer.removeAllListeners("resume-tasks");
+  },
 
   /* ================= AUTO UPDATE ================= */
 
