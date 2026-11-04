@@ -35,21 +35,23 @@ const todayDate = () => new Date().toISOString().slice(0, 10);
 
 /* ================= SESSION & WORKED TODAY HELPERS ================= */
 
-const getTodayDateStringIST = () => {
-  return new Date()
-    .toLocaleString("en-CA", { timeZone: "Asia/Kolkata" })
-    .slice(0, 10);
+const getTodayDateStringIST = (d = new Date()) => {
+  const dt = typeof d === "string" ? new Date(d) : d;
+  if (!dt || isNaN(dt.getTime())) return "";
+  const istDate = new Date(
+    dt.toLocaleString("en-US", { timeZone: "Asia/Kolkata" })
+  );
+  // Office hours 10 AM to 7 PM: new day starts at 9:00 AM IST
+  istDate.setHours(istDate.getHours() - 9);
+  const year = istDate.getFullYear();
+  const month = String(istDate.getMonth() + 1).padStart(2, "0");
+  const day = String(istDate.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
 };
 
 const getSessionDateIST = (isoString) => {
   if (!isoString) return "";
-  try {
-    return new Date(isoString)
-      .toLocaleString("en-CA", { timeZone: "Asia/Kolkata" })
-      .slice(0, 10);
-  } catch {
-    return "";
-  }
+  return getTodayDateStringIST(isoString);
 };
 
 const isSessionFromToday = (session, todayDateStr) => {
@@ -57,14 +59,15 @@ const isSessionFromToday = (session, todayDateStr) => {
     session.started_at ||
     session.start ||
     session.start_time ||
-    session.startTime ||
-    session.createdAt;
+    session.startTime;
   const stopStr =
     session.stopped_at ||
     session.end ||
     session.ended_at ||
     session.end_time ||
     session.endTime;
+
+  if (!startStr && !stopStr) return false;
 
   const startDateIST = getSessionDateIST(startStr);
   const stopDateIST = getSessionDateIST(stopStr);
@@ -88,8 +91,7 @@ const getSessionDurationSeconds = (session) => {
     session.started_at ||
     session.start ||
     session.start_time ||
-    session.startTime ||
-    session.createdAt;
+    session.startTime;
   const stopStr =
     session.stopped_at ||
     session.end ||
@@ -105,6 +107,36 @@ const getSessionDurationSeconds = (session) => {
   }
 
   return 0;
+};
+
+const getTaskTodaySeconds = (task) => {
+  if (!task) return 0;
+
+  const todayDateStr = getTodayDateStringIST();
+
+  const sessions = Array.isArray(task.work_sessions)
+    ? task.work_sessions
+    : Array.isArray(task.task?.work_sessions)
+    ? task.task.work_sessions
+    : [];
+
+  const todaySessions = sessions.filter((s) =>
+    isSessionFromToday(s, todayDateStr)
+  );
+  const completedTodaySec = todaySessions.reduce(
+    (sum, s) => sum + getSessionDurationSeconds(s),
+    0
+  );
+
+  let liveSec = 0;
+  if (task.is_running && task.last_started_at) {
+    const elapsed = Math.floor(
+      (Date.now() - new Date(task.last_started_at).getTime()) / 1000
+    );
+    liveSec = Math.max(0, elapsed);
+  }
+
+  return completedTodaySec + liveSec;
 };
 
 const calculateTodayWorkedSeconds = (logsByTab, runningTask) => {
@@ -131,29 +163,15 @@ const calculateTodayWorkedSeconds = (logsByTab, runningTask) => {
       : [];
 
     if (sessions.length > 0) {
-      // Task has sessions: strictly sum ONLY today's sessions!
-      const todaySessions = sessions.filter((s) => isSessionFromToday(s, todayDateStr));
+      // Strictly sum ONLY today's sessions!
+      const todaySessions = sessions.filter((s) =>
+        isSessionFromToday(s, todayDateStr)
+      );
       const taskTodaySum = todaySessions.reduce(
         (sum, s) => sum + getSessionDurationSeconds(s),
         0
       );
       completedTodaySeconds += taskTodaySum;
-    } else {
-      // Fallback only if task has NO sessions at all:
-      // Check if task itself was created today before considering its total_time_taken
-      const createdAt = task.createdAt || task.task?.createdAt || task.created_at;
-      const createdDateIST = getSessionDateIST(createdAt);
-
-      if (createdDateIST === todayDateStr) {
-        const sec = Number(
-          task.total_time_taken ??
-          task.total_seconds ??
-          task.time_spent ??
-          task.task?.total_seconds ??
-          0
-        );
-        completedTodaySeconds += Math.max(0, sec);
-      }
     }
   });
 
@@ -541,7 +559,7 @@ export default function AttendanceApp({ onLogout }) {
 
   /* ===== RUNNING TASK & VISIBLE TASKS ===== */
   const runningTask = runningTaskState;
-  const runningSeconds = runningTask ? getLiveSeconds(runningTask) : 0;
+  const runningSeconds = runningTask ? getTaskTodaySeconds(runningTask) : 0;
 
   const visibleTasks = (workLogs || [])
     .filter((t) => {
@@ -615,13 +633,12 @@ export default function AttendanceApp({ onLogout }) {
   useEffect(() => {
     if (calculatedTodaySeconds > 0) {
       localStorage.setItem(todayKey, String(calculatedTodaySeconds));
+    } else {
+      localStorage.removeItem(todayKey);
     }
   }, [calculatedTodaySeconds, todayKey]);
 
-  const hasLoadedAnyTab = Object.keys(logsByTab).length > 0;
-  const totalTodaySeconds = hasLoadedAnyTab
-    ? calculatedTodaySeconds
-    : Number(localStorage.getItem(todayKey) || 0);
+  const totalTodaySeconds = calculatedTodaySeconds;
 
   /* ===== SEND WORKLOG ID TO ELECTRON ===== */
   useEffect(() => {
@@ -1378,7 +1395,11 @@ export default function AttendanceApp({ onLogout }) {
                                 : "bg-transparent text-gray-800"
                               }`}
                             >
-                              {formatHMS(getLiveSeconds(task))}
+                              {formatHMS(
+                                activeTab === "in-progress"
+                                  ? getTaskTodaySeconds(task)
+                                  : getLiveSeconds(task)
+                              )}
                             </span>
                           </td>
 

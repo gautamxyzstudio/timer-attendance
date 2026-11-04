@@ -75,8 +75,8 @@ export default function Login({ onLogin }) {
       )}
 
       <div
-        style={{ width: "680px", height: "480px" }}
-        className="flex items-center justify-center bg-[#F3F4F6] "
+       
+        className="flex items-center justify-center "
       >
         <div
           className="bg-white rounded-md shadow-[0_4px_12px_rgba(0,0,0,0.12)] box-border"
