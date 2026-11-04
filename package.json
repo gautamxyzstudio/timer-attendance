@@ -10,7 +10,9 @@
   "scripts": {
     "dev": "vite",
     "start": "concurrently \"vite\" \"wait-on http://localhost:5173 && electron electron/main.cjs\"",
+    "build": "vite build",
     "build:web": "vite build",
+    "electron:build": "npm run build && electron-builder --win msi --x64",
     "dist": "npm run build:web && electron-builder",
     "dist:win": "npm run build:web && electron-builder --win",
     "dist:mac": "npm run build:web && electron-builder --mac",
@@ -56,14 +58,14 @@
         "releaseType": "release"
       }
     ],
-    "nsis": {
+    "msi": {
       "oneClick": true,
       "perMachine": false,
-      "allowElevation": true,
-      "allowToChangeInstallationDirectory": false,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
-      "shortcutName": "Time Tracker"
+      "runAfterFinish": true,
+      "shortcutName": "Time Tracker",
+      "upgradeCode": "429b53f7-20bd-4750-8c95-13f6d104c4eb"
     },
     "files": [
       "dist/**",
@@ -75,7 +77,7 @@
       "icon": "assets/icons/icon.ico",
       "target": [
         {
-          "target": "nsis",
+          "target": "msi",
           "arch": [
             "x64"
           ]
