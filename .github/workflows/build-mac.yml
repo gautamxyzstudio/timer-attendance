@@ -1,0 +1,39 @@
+
+name: Build Time Tracker for macOS
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+
+jobs:
+  build-mac:
+    runs-on: macos-latest
+
+    steps:
+      - name: Checkout project
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build React application
+        run: npm run build
+
+      - name: Build macOS DMG and ZIP
+        run: npx electron-builder --mac dmg zip --arm64 --publish never
+
+      - name: Upload macOS build
+        uses: actions/upload-artifact@v4
+        with:
+          name: Time-Tracker-macOS-arm64
+          path: release/*.dmg
+          if-no-files-found: error
+          retention-days: 14
