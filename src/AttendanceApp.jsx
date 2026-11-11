@@ -476,31 +476,55 @@ export default function AttendanceApp({ onLogout }) {
     prefetchOtherTabs();
   }, []);
 
-  /* ===== SYNC FROM BACKEND (10s) ===== */
+  /* ===== LIVE SYNC FROM BACKEND (no manual refresh needed) =====
+   * - Active tab + In Progress: every 5s
+   * - All tabs: every 30s, and instantly when the window gets focus,
+   *   becomes visible again, or the network comes back online
+   * - Any change (new task, title, status, priority, time) updates the UI
+   */
   useEffect(() => {
-    const interval = setInterval(async () => {
-      // Don't run background sync while user is actively switching/stopping a task
-      if (pendingRunningTaskRef.current) return;
+    const ALL_TABS = ["in-progress", "planned", "completed", "blocked"];
+    const FAST_MS = 5000;
+    const FULL_EVERY = 6; // 6 x 5s = 30s
+    let cancelled = false;
+    let inFlight = false;
+    let ticks = 0;
 
+    const fetchTab = async (tab) => {
+      const res = await api.get("/work-logs/today", { params: { status: tab } });
+      const raw = Array.isArray(res.data?.work_log)
+        ? res.data.work_log
+        : res.data?.work_log
+        ? [res.data.work_log]
+        : [];
+      return raw.map(normalizeWorkLogItem);
+    };
+
+    const syncNow = async (full = false) => {
+      // Don't sync while user is actively switching/stopping a task
+      if (inFlight || pendingRunningTaskRef.current) return;
+      inFlight = true;
       try {
-        const res = await api.get("/work-logs/today", {
-          params: { status: activeTab },
-        });
+        const tabs = full
+          ? ALL_TABS
+          : Array.from(new Set([activeTab, "in-progress"]));
+        const results = await Promise.allSettled(tabs.map(fetchTab));
 
         // Re-check after async fetch
-        if (pendingRunningTaskRef.current) return;
+        if (cancelled || pendingRunningTaskRef.current) return;
 
-        const raw = Array.isArray(res.data?.work_log)
-          ? res.data.work_log
-          : res.data?.work_log
-          ? [res.data.work_log]
-          : [];
+        const fresh = {};
+        results.forEach((r, i) => {
+          if (r.status === "fulfilled") fresh[tabs[i]] = r.value;
+          else console.error(`🔴 Live sync failed (${tabs[i]})`, r.reason);
+        });
 
-        const normalized = raw.map(normalizeWorkLogItem);
-        syncMetaFromLogs(normalized);
+        const metaSource = fresh[activeTab] || fresh["in-progress"];
+        if (metaSource) syncMetaFromLogs(metaSource);
 
-        if (activeTab === "in-progress") {
-          const running = normalized.find((t) => t.is_running);
+        const inProgress = fresh["in-progress"];
+        if (inProgress) {
+          const running = inProgress.find((t) => t.is_running);
           if (running && !isLunchBreak()) {
             setRunningTaskState(running);
             window.electronAPI?.setTaskRunning(true);
@@ -513,40 +537,52 @@ export default function AttendanceApp({ onLogout }) {
           window.electronAPI?.setTaskRunning(false);
         }
 
+        // Only re-render tabs whose data actually changed
         setLogsByTab((prev) => {
-          const currentLogs = prev[activeTab];
-          if (!currentLogs) return { ...prev, [activeTab]: normalized };
-
-          const prevSummary = JSON.stringify(
-            currentLogs.map((t) => ({
-              id: t.id,
-              running: t.is_running,
-              time: t.total_seconds,
-              last_started_at: t.last_started_at,
-              is_checked_in: t.is_checked_in,
-              out: t.out,
-            }))
-          );
-          const nextSummary = JSON.stringify(
-            normalized.map((t) => ({
-              id: t.id,
-              running: t.is_running,
-              time: t.total_seconds,
-              last_started_at: t.last_started_at,
-              is_checked_in: t.is_checked_in,
-              out: t.out,
-            }))
-          );
-
-          if (prevSummary === nextSummary) return prev;
-          return { ...prev, [activeTab]: normalized };
+          let changed = false;
+          const next = { ...prev };
+          for (const tab of Object.keys(fresh)) {
+            if (JSON.stringify(prev[tab]) !== JSON.stringify(fresh[tab])) {
+              next[tab] = fresh[tab];
+              changed = true;
+            }
+          }
+          return changed ? next : prev;
         });
-      } catch (err) {
-        console.error("🔴 Worklog sync failed", err);
+      } finally {
+        inFlight = false;
       }
-    }, 10000);
+    };
 
-    return () => clearInterval(interval);
+    const interval = setInterval(() => {
+      ticks += 1;
+      syncNow(ticks % FULL_EVERY === 0);
+    }, FAST_MS);
+
+    const onFocus = () => {
+      syncNow(true);
+      const uid = getUser()?.id;
+      if (uid) {
+        fetchUserProfile(uid)
+          .then((p) => p && !cancelled && setCachedUser(p))
+          .catch(() => {});
+      }
+    };
+    const onVisible = () => {
+      if (document.visibilityState === "visible") onFocus();
+    };
+
+    window.addEventListener("focus", onFocus);
+    window.addEventListener("online", onFocus);
+    document.addEventListener("visibilitychange", onVisible);
+
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+      window.removeEventListener("focus", onFocus);
+      window.removeEventListener("online", onFocus);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
   }, [activeTab]);
 
   const firstLog = workLogs?.[0];
